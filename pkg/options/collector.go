@@ -23,6 +23,6 @@ import (
 var (
 	DefaultNamespaces = NamespaceList{metav1.NamespaceAll}
 	DefaultCollectors = CollectorSet{
-		"deploymentconfig":  struct{}{},
+		"deploymentconfig": struct{}{},
 	}
 )

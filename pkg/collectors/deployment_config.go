@@ -123,7 +123,7 @@ func (l DeploymentLister) List() ([]v1.DeploymentConfig, error) {
 	return l()
 }
 
-func createAppsClient(apiserver string, kubeconfig string) (*appsclient.Clientset,error){
+func createAppsClient(apiserver string, kubeconfig string) (*appsclient.Clientset, error) {
 	config, err := clientcmd.BuildConfigFromFlags(apiserver, kubeconfig)
 	if err != nil {
 		return nil, err
@@ -134,21 +134,21 @@ func createAppsClient(apiserver string, kubeconfig string) (*appsclient.Clientse
 	config.ContentType = "application/vnd.kubernetes.protobuf"
 
 	client, err := appsclient.NewForConfig(config)
-	return client,err
+	return client, err
 
 }
 
 func RegisterDeploymentConfigCollector(registry prometheus.Registerer, opts *options.Options) {
 	glog.Info("register deployment config collector")
-	appsclient, err := createAppsClient(opts.Apiserver,opts.Kubeconfig)
+	appsclient, err := createAppsClient(opts.Apiserver, opts.Kubeconfig)
 
-	if err!=nil{
+	if err != nil {
 		glog.Fatalf("failed :%v", err)
 	}
 
 	infos := []informers.SharedInformerFactory{}
-	for _, ns := range opts.Namespaces{
-		infos = append(infos, informers.NewSharedInformerFactoryWithOptions(appsclient,0, informers.WithNamespace(ns)))
+	for _, ns := range opts.Namespaces {
+		infos = append(infos, informers.NewSharedInformerFactoryWithOptions(appsclient, 0, informers.WithNamespace(ns)))
 	}
 	infs := SharedInformerList{}
 	for _, f := range infos {

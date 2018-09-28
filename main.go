@@ -108,7 +108,7 @@ func main() {
 	ksmMetricsRegistry := prometheus.NewRegistry()
 	ksmMetricsRegistry.Register(ocollectors.ResourcesPerScrapeMetric)
 	ksmMetricsRegistry.Register(ocollectors.ScrapeErrorTotalMetric)
-	ksmMetricsRegistry.Register(prometheus.NewProcessCollector(os.Getpid(),""))
+	ksmMetricsRegistry.Register(prometheus.NewProcessCollector(os.Getpid(), ""))
 	ksmMetricsRegistry.Register(prometheus.NewGoCollector())
 	go telemetryServer(ksmMetricsRegistry, opts.TelemetryHost, opts.TelemetryPort)
 
@@ -181,7 +181,7 @@ func metricsServer(registry prometheus.Gatherer, host string, port int) {
 
 // registerCollectors creates and starts informers and initializes and
 // registers metrics for collection.
-func registerCollectors(registry prometheus.Registerer, enabledCollectors options.CollectorSet,  opts *options.Options) {
+func registerCollectors(registry prometheus.Registerer, enabledCollectors options.CollectorSet, opts *options.Options) {
 
 	activeCollectors := []string{}
 	for c := range enabledCollectors {

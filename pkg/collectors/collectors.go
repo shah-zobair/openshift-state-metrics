@@ -49,12 +49,12 @@ var (
 	invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
 	DefaultCollectors = options.CollectorSet{
-		"deploymentconfig":               struct{}{},
+		"deploymentconfig": struct{}{},
 	}
 )
 
 var AvailableCollectors = map[string]func(registry prometheus.Registerer, opts *options.Options){
-	"deploymentconfig":              RegisterDeploymentConfigCollector,
+	"deploymentconfig": RegisterDeploymentConfigCollector,
 }
 
 type SharedInformerList []cache.SharedInformer
