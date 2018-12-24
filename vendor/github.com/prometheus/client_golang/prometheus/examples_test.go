@@ -712,7 +712,7 @@ humidity_percent{location="inside"} 33.2
 # HELP temperature_kelvin Temperature in Kelvin.
 # Duplicate metric:
 temperature_kelvin{location="outside"} 265.3
- # Missing location label (note that this is undesirable but valid):
+ # Wrong labels:
 temperature_kelvin 4.5
 `
 
@@ -740,14 +740,15 @@ temperature_kelvin 4.5
 	// temperature_kelvin{location="outside"} 273.14
 	// temperature_kelvin{location="somewhere else"} 4.5
 	// ----------
-	// collected metric temperature_kelvin label:<name:"location" value:"outside" > gauge:<value:265.3 >  was collected before with the same name and label values
+	// 2 error(s) occurred:
+	// * collected metric temperature_kelvin label:<name:"location" value:"outside" > gauge:<value:265.3 >  was collected before with the same name and label values
+	// * collected metric temperature_kelvin gauge:<value:4.5 >  has label dimensions inconsistent with previously collected metrics in the same metric family
 	// # HELP humidity_percent Humidity in %.
 	// # TYPE humidity_percent gauge
 	// humidity_percent{location="inside"} 33.2
 	// humidity_percent{location="outside"} 45.4
 	// # HELP temperature_kelvin Temperature in Kelvin.
 	// # TYPE temperature_kelvin gauge
-	// temperature_kelvin 4.5
 	// temperature_kelvin{location="inside"} 298.44
 	// temperature_kelvin{location="outside"} 273.14
 }

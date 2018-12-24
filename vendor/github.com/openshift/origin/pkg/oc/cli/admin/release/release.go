@@ -18,8 +18,7 @@ func NewCmd(f kcmdutil.Factory, parentName string, streams genericclioptions.IOS
 			Experimental: This command is under active development and may change without notice.
 			`),
 	}
-	cmd.AddCommand(NewRelease(f, parentName+" release", streams))
-	cmd.AddCommand(NewExtract(f, parentName+" release", streams))
-	cmd.AddCommand(NewMirror(f, parentName+" release", streams))
+	cmd.AddCommand(NewRelease(f, streams))
+	cmd.AddCommand(NewExtract(f, streams))
 	return cmd
 }

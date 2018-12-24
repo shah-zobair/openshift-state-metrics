@@ -6,11 +6,12 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 )
 
 const (
@@ -42,29 +43,29 @@ func NewEvacuateOptions(nodeOptions *NodeOptions) *EvacuateOptions {
 	}
 }
 
-func (o *EvacuateOptions) AddFlags(cmd *cobra.Command) {
+func (e *EvacuateOptions) AddFlags(cmd *cobra.Command) {
 	flags := cmd.Flags()
 
-	flags.BoolVar(&o.DryRun, flagDryRun, o.DryRun, "Show pods that will be migrated. Optional param for --evacuate")
-	flags.BoolVar(&o.Force, flagForce, o.Force, "Delete pods not backed by replication controller. Optional param for --evacuate")
-	flags.Int64Var(&o.GracePeriod, flagGracePeriod, o.GracePeriod, "Grace period (seconds) for pods being deleted. Ignored if negative. Optional param for --evacuate")
+	flags.BoolVar(&e.DryRun, flagDryRun, e.DryRun, "Show pods that will be migrated. Optional param for --evacuate")
+	flags.BoolVar(&e.Force, flagForce, e.Force, "Delete pods not backed by replication controller. Optional param for --evacuate")
+	flags.Int64Var(&e.GracePeriod, flagGracePeriod, e.GracePeriod, "Grace period (seconds) for pods being deleted. Ignored if negative. Optional param for --evacuate")
 
 }
 
-func (o *EvacuateOptions) Run() error {
-	if o.DryRun {
-		listpodsOp := ListPodsOptions{Options: o.Options, printPodHeaders: o.printPodHeaders}
+func (e *EvacuateOptions) Run() error {
+	if e.DryRun {
+		listpodsOp := ListPodsOptions{Options: e.Options, printPodHeaders: e.printPodHeaders}
 		return listpodsOp.Run()
 	}
 
-	nodes, err := o.Options.GetNodes()
+	nodes, err := e.Options.GetNodes()
 	if err != nil {
 		return err
 	}
 
 	errList := []error{}
 	for _, node := range nodes {
-		err := o.RunEvacuate(node)
+		err := e.RunEvacuate(node)
 		if err != nil {
 			// Don't bail out if one node fails
 			errList = append(errList, err)
@@ -73,7 +74,7 @@ func (o *EvacuateOptions) Run() error {
 	return kerrors.NewAggregate(errList)
 }
 
-func (o *EvacuateOptions) RunEvacuate(node *corev1.Node) error {
+func (e *EvacuateOptions) RunEvacuate(node *kapi.Node) error {
 	// We do *not* automatically mark the node unschedulable to perform evacuation.
 	// Rationale: If we unschedule the node and later the operation is unsuccessful (stopped by user, network error, etc.),
 	// we may not be able to recover in some cases to mark the node back to schedulable. To avoid these cases, we recommend
@@ -82,46 +83,42 @@ func (o *EvacuateOptions) RunEvacuate(node *corev1.Node) error {
 		return fmt.Errorf("Node '%s' must be unschedulable to perform evacuation.\nYou can mark the node unschedulable with 'oc adm manage-node %s --schedulable=false'", node.ObjectMeta.Name, node.ObjectMeta.Name)
 	}
 
-	labelSelector, err := labels.Parse(o.Options.PodSelector)
+	labelSelector, err := labels.Parse(e.Options.PodSelector)
 	if err != nil {
 		return err
 	}
 	fieldSelector := fields.Set{GetPodHostFieldLabel(node.TypeMeta.APIVersion): node.ObjectMeta.Name}.AsSelector()
 
 	// Filter all pods that satisfies pod label selector and belongs to the given node
-	pods, err := o.Options.KubeClient.CoreV1().Pods(metav1.NamespaceAll).List(metav1.ListOptions{LabelSelector: labelSelector.String(), FieldSelector: fieldSelector.String()})
+	pods, err := e.Options.KubeClient.Core().Pods(metav1.NamespaceAll).List(metav1.ListOptions{LabelSelector: labelSelector.String(), FieldSelector: fieldSelector.String()})
 	if err != nil {
 		return err
 	}
 	if len(pods.Items) == 0 {
-		fmt.Fprint(o.Options.ErrOut, "\nNo pods found on node: ", node.ObjectMeta.Name, "\n\n")
+		fmt.Fprint(e.Options.ErrOut, "\nNo pods found on node: ", node.ObjectMeta.Name, "\n\n")
 		return nil
 	}
-	rcs, err := o.Options.KubeClient.CoreV1().ReplicationControllers(metav1.NamespaceAll).List(metav1.ListOptions{})
+	rcs, err := e.Options.KubeClient.Core().ReplicationControllers(metav1.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 
-	rss, err := o.Options.KubeClient.AppsV1().ReplicaSets(metav1.NamespaceAll).List(metav1.ListOptions{})
+	rss, err := e.Options.KubeClient.Extensions().ReplicaSets(metav1.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 
-	dss, err := o.Options.KubeClient.AppsV1().DaemonSets(metav1.NamespaceAll).List(metav1.ListOptions{})
+	dss, err := e.Options.KubeClient.Extensions().DaemonSets(metav1.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 
-	jobs, err := o.Options.KubeClient.BatchV1().Jobs(metav1.NamespaceAll).List(metav1.ListOptions{})
+	jobs, err := e.Options.KubeClient.Batch().Jobs(metav1.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
 
-	if o.DryRun {
-		o.Options.PrintFlags.Complete("%s (dry run)")
-	}
-
-	p, err := o.Options.ToPrinter("migrated")
+	printer, err := e.Options.GetPrintersByResource(schema.GroupVersionResource{Resource: "pod"}, false)
 	if err != nil {
 		return err
 	}
@@ -131,8 +128,8 @@ func (o *EvacuateOptions) RunEvacuate(node *corev1.Node) error {
 	numUnmanagedPods := 0
 
 	var deleteOptions *metav1.DeleteOptions
-	if o.GracePeriod >= 0 {
-		deleteOptions = o.makeDeleteOptions()
+	if e.GracePeriod >= 0 {
+		deleteOptions = e.makeDeleteOptions()
 	}
 
 	for _, pod := range pods.Items {
@@ -170,14 +167,14 @@ func (o *EvacuateOptions) RunEvacuate(node *corev1.Node) error {
 		}
 
 		if firstPod {
-			fmt.Fprint(o.Options.ErrOut, "\nMigrating these pods on node: ", node.ObjectMeta.Name, "\n\n")
+			fmt.Fprint(e.Options.ErrOut, "\nMigrating these pods on node: ", node.ObjectMeta.Name, "\n\n")
 			firstPod = false
 		}
 
-		p.PrintObj(&pod, o.Options.Out)
+		printer.PrintObj(&pod, e.Options.Out)
 
-		if isManaged || o.Force {
-			if err := o.Options.KubeClient.CoreV1().Pods(pod.Namespace).Delete(pod.Name, deleteOptions); err != nil {
+		if isManaged || e.Force {
+			if err := e.Options.KubeClient.Core().Pods(pod.Namespace).Delete(pod.Name, deleteOptions); err != nil {
 				glog.Errorf("Unable to delete a pod: %+v, error: %v", pod, err)
 				errList = append(errList, err)
 				continue
@@ -203,6 +200,6 @@ Suggested options:
 }
 
 // makeDeleteOptions creates the delete options that will be used for pod evacuation.
-func (o *EvacuateOptions) makeDeleteOptions() *metav1.DeleteOptions {
-	return &metav1.DeleteOptions{GracePeriodSeconds: &o.GracePeriod}
+func (e *EvacuateOptions) makeDeleteOptions() *metav1.DeleteOptions {
+	return &metav1.DeleteOptions{GracePeriodSeconds: &e.GracePeriod}
 }

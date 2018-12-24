@@ -3,17 +3,20 @@ package images
 import (
 	"testing"
 
-	kappsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	kbatch "k8s.io/kubernetes/pkg/apis/batch"
+	"k8s.io/kubernetes/pkg/apis/core"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
+	kextensions "k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/kubectl/polymorphichelpers"
 
-	appsv1 "github.com/openshift/api/apps/v1"
-	buildv1 "github.com/openshift/api/build/v1"
-	imagev1 "github.com/openshift/api/image/v1"
+	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
+	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	"github.com/openshift/origin/pkg/oc/originpolymorphichelpers"
 )
 
@@ -153,18 +156,18 @@ func TestTransform(t *testing.T) {
 			mappings: ImageReferenceMappings{{FromRegistry: "docker.io", ToRegistry: "index.docker.io"}},
 			variants: []variant{
 				{
-					obj: &corev1.Pod{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
+					obj: &kapi.Pod{
+						Spec: kapi.PodSpec{
+							Containers: []kapi.Container{
 								{Image: "docker.io/foo/bar"},
 								{Image: "foo/bar"},
 							},
 						},
 					},
 					changed: true,
-					expected: &corev1.Pod{
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
+					expected: &kapi.Pod{
+						Spec: kapi.PodSpec{
+							Containers: []kapi.Container{
 								{Image: "index.docker.io/foo/bar"},
 								{Image: "index.docker.io/foo/bar"},
 							},
@@ -172,11 +175,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &corev1.ReplicationController{
-						Spec: corev1.ReplicationControllerSpec{
-							Template: &corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &kapi.ReplicationController{
+						Spec: kapi.ReplicationControllerSpec{
+							Template: &kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -185,11 +188,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &corev1.ReplicationController{
-						Spec: corev1.ReplicationControllerSpec{
-							Template: &corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &kapi.ReplicationController{
+						Spec: kapi.ReplicationControllerSpec{
+							Template: &kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -199,11 +202,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &kappsv1.Deployment{
-						Spec: kappsv1.DeploymentSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &kextensions.Deployment{
+						Spec: kextensions.DeploymentSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -212,11 +215,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &kappsv1.Deployment{
-						Spec: kappsv1.DeploymentSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &kextensions.Deployment{
+						Spec: kextensions.DeploymentSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -226,11 +229,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &appsv1.DeploymentConfig{
-						Spec: appsv1.DeploymentConfigSpec{
-							Template: &corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &appsapi.DeploymentConfig{
+						Spec: appsapi.DeploymentConfigSpec{
+							Template: &kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -239,11 +242,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &appsv1.DeploymentConfig{
-						Spec: appsv1.DeploymentConfigSpec{
-							Template: &corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &appsapi.DeploymentConfig{
+						Spec: appsapi.DeploymentConfigSpec{
+							Template: &kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -253,11 +256,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &kappsv1.DaemonSet{
-						Spec: kappsv1.DaemonSetSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &kextensions.DaemonSet{
+						Spec: kextensions.DaemonSetSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -266,11 +269,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &kappsv1.DaemonSet{
-						Spec: kappsv1.DaemonSetSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &kextensions.DaemonSet{
+						Spec: kextensions.DaemonSetSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -280,11 +283,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &kappsv1.ReplicaSet{
-						Spec: kappsv1.ReplicaSetSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &kextensions.ReplicaSet{
+						Spec: kextensions.ReplicaSetSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -293,11 +296,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &kappsv1.ReplicaSet{
-						Spec: kappsv1.ReplicaSetSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &kextensions.ReplicaSet{
+						Spec: kextensions.ReplicaSetSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -307,11 +310,11 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj: &batchv1.Job{
-						Spec: batchv1.JobSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					obj: &kbatch.Job{
+						Spec: kbatch.JobSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "docker.io/foo/bar"},
 										{Image: "foo/bar"},
 									},
@@ -320,11 +323,11 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &batchv1.Job{
-						Spec: batchv1.JobSpec{
-							Template: corev1.PodTemplateSpec{
-								Spec: corev1.PodSpec{
-									Containers: []corev1.Container{
+					expected: &kbatch.Job{
+						Spec: kbatch.JobSpec{
+							Template: kapi.PodTemplateSpec{
+								Spec: kapi.PodSpec{
+									Containers: []kapi.Container{
 										{Image: "index.docker.io/foo/bar"},
 										{Image: "index.docker.io/foo/bar"},
 									},
@@ -334,197 +337,197 @@ func TestTransform(t *testing.T) {
 					},
 				},
 				{
-					obj:         &corev1.Node{},
+					obj:         &kapi.Node{},
 					nilReporter: true,
 				},
 				{
-					obj: &buildv1.BuildConfig{
-						Spec: buildv1.BuildConfigSpec{
-							CommonSpec: buildv1.CommonSpec{
-								Output: buildv1.BuildOutput{To: &corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
-								Source: buildv1.BuildSource{
-									Images: []buildv1.ImageSource{
-										{From: corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
-										{From: corev1.ObjectReference{Kind: "DockerImage", Name: "foo/bar"}},
+					obj: &buildapi.BuildConfig{
+						Spec: buildapi.BuildConfigSpec{
+							CommonSpec: buildapi.CommonSpec{
+								Output: buildapi.BuildOutput{To: &kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+								Source: buildapi.BuildSource{
+									Images: []buildapi.ImageSource{
+										{From: kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+										{From: kapi.ObjectReference{Kind: "DockerImage", Name: "foo/bar"}},
 									},
 								},
-								Strategy: buildv1.BuildStrategy{
-									DockerStrategy: &buildv1.DockerBuildStrategy{From: &corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
-									SourceStrategy: &buildv1.SourceBuildStrategy{From: corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
-									CustomStrategy: &buildv1.CustomBuildStrategy{From: corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+								Strategy: buildapi.BuildStrategy{
+									DockerStrategy: &buildapi.DockerBuildStrategy{From: &kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+									SourceStrategy: &buildapi.SourceBuildStrategy{From: kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+									CustomStrategy: &buildapi.CustomBuildStrategy{From: kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
 								},
 							},
 						},
 					},
 					changed: true,
-					expected: &buildv1.BuildConfig{
-						Spec: buildv1.BuildConfigSpec{
-							CommonSpec: buildv1.CommonSpec{
-								Output: buildv1.BuildOutput{To: &corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
-								Source: buildv1.BuildSource{
-									Images: []buildv1.ImageSource{
-										{From: corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
-										{From: corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+					expected: &buildapi.BuildConfig{
+						Spec: buildapi.BuildConfigSpec{
+							CommonSpec: buildapi.CommonSpec{
+								Output: buildapi.BuildOutput{To: &kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+								Source: buildapi.BuildSource{
+									Images: []buildapi.ImageSource{
+										{From: kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+										{From: kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
 									},
 								},
-								Strategy: buildv1.BuildStrategy{
-									DockerStrategy: &buildv1.DockerBuildStrategy{From: &corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
-									SourceStrategy: &buildv1.SourceBuildStrategy{From: corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
-									CustomStrategy: &buildv1.CustomBuildStrategy{From: corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+								Strategy: buildapi.BuildStrategy{
+									DockerStrategy: &buildapi.DockerBuildStrategy{From: &kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+									SourceStrategy: &buildapi.SourceBuildStrategy{From: kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+									CustomStrategy: &buildapi.CustomBuildStrategy{From: kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
 								},
 							},
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 					changed: true,
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"index.docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"index.docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"myserver.com":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"myserver.com":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"myserver.com":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"myserver.com":{"auth":"Og=="},"other.server":{"auth":"Og=="}}`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}}`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}}`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 					changed: true,
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"index.docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}}`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"index.docker.io":{"auth":"Og=="},"other.server":{"auth":"Og=="}}}`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"myserver.com":{},"other.server":{}}}`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"myserver.com":{},"other.server":{}}}`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"myserver.com":{},"other.server":{}}}`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"myserver.com":{},"other.server":{}}}`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"auths":{`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"auths":{`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 					err: true,
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockercfg,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockercfg,
 						Data: map[string][]byte{
-							corev1.DockerConfigKey: []byte(`{"auths":{`),
-							"another":              []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigKey: []byte(`{"auths":{`),
+							"another":            []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 					err: true,
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeDockerConfigJson,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeDockerConfigJson,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{`),
-							"another":                  []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{`),
+							"another":                []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &corev1.Secret{
-						Type: corev1.SecretTypeOpaque,
+					obj: &kapi.Secret{
+						Type: kapi.SecretTypeOpaque,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
-					expected: &corev1.Secret{
-						Type: corev1.SecretTypeOpaque,
+					expected: &kapi.Secret{
+						Type: kapi.SecretTypeOpaque,
 						Data: map[string][]byte{
-							corev1.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
+							kapi.DockerConfigJsonKey: []byte(`{"auths":{"docker.io":{},"other.server":{}}}`),
 						},
 					},
 				},
 				{
-					obj: &imagev1.Image{
+					obj: &imageapi.Image{
 						DockerImageReference: "docker.io/foo/bar",
 					},
 					changed: true,
-					expected: &imagev1.Image{
+					expected: &imageapi.Image{
 						DockerImageReference: "index.docker.io/foo/bar",
 					},
 				},
 				{
-					obj: &imagev1.Image{
+					obj: &imageapi.Image{
 						DockerImageReference: "other.docker.io/foo/bar",
 					},
-					expected: &imagev1.Image{
+					expected: &imageapi.Image{
 						DockerImageReference: "other.docker.io/foo/bar",
 					},
 				},
 				{
-					obj: &imagev1.ImageStream{
-						Spec: imagev1.ImageStreamSpec{
-							Tags: []imagev1.TagReference{
-								{Name: "foo", From: &corev1.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
-								{Name: "bar", From: &corev1.ObjectReference{Kind: "ImageStream", Name: "docker.io/foo/bar"}},
-								{Name: "baz"},
+					obj: &imageapi.ImageStream{
+						Spec: imageapi.ImageStreamSpec{
+							Tags: map[string]imageapi.TagReference{
+								"foo": {From: &kapi.ObjectReference{Kind: "DockerImage", Name: "docker.io/foo/bar"}},
+								"bar": {From: &kapi.ObjectReference{Kind: "ImageStream", Name: "docker.io/foo/bar"}},
+								"baz": {},
 							},
 							DockerImageRepository: "docker.io/foo/bar",
 						},
-						Status: imagev1.ImageStreamStatus{
+						Status: imageapi.ImageStreamStatus{
 							DockerImageRepository: "docker.io/foo/bar",
-							Tags: []imagev1.NamedTagEventList{
-								{Tag: "bar", Items: []imagev1.TagEvent{
+							Tags: map[string]imageapi.TagEventList{
+								"bar": {Items: []imageapi.TagEvent{
 									{DockerImageReference: "docker.io/foo/bar"},
 									{DockerImageReference: "docker.io/foo/bar"},
 								}},
-								{Tag: "baz", Items: []imagev1.TagEvent{
+								"baz": {Items: []imageapi.TagEvent{
 									{DockerImageReference: "some.other/reference"},
 									{DockerImageReference: "docker.io/foo/bar"},
 								}},
@@ -532,23 +535,23 @@ func TestTransform(t *testing.T) {
 						},
 					},
 					changed: true,
-					expected: &imagev1.ImageStream{
-						Spec: imagev1.ImageStreamSpec{
-							Tags: []imagev1.TagReference{
-								{Name: "foo", From: &corev1.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
-								{Name: "bar", From: &corev1.ObjectReference{Kind: "ImageStream", Name: "docker.io/foo/bar"}},
-								{Name: "baz"},
+					expected: &imageapi.ImageStream{
+						Spec: imageapi.ImageStreamSpec{
+							Tags: map[string]imageapi.TagReference{
+								"foo": {From: &kapi.ObjectReference{Kind: "DockerImage", Name: "index.docker.io/foo/bar"}},
+								"bar": {From: &kapi.ObjectReference{Kind: "ImageStream", Name: "docker.io/foo/bar"}},
+								"baz": {},
 							},
 							DockerImageRepository: "index.docker.io/foo/bar",
 						},
-						Status: imagev1.ImageStreamStatus{
+						Status: imageapi.ImageStreamStatus{
 							DockerImageRepository: "docker.io/foo/bar",
-							Tags: []imagev1.NamedTagEventList{
-								{Tag: "bar", Items: []imagev1.TagEvent{
+							Tags: map[string]imageapi.TagEventList{
+								"bar": {Items: []imageapi.TagEvent{
 									{DockerImageReference: "index.docker.io/foo/bar"},
 									{DockerImageReference: "index.docker.io/foo/bar"},
 								}},
-								{Tag: "baz", Items: []imagev1.TagEvent{
+								"baz": {Items: []imageapi.TagEvent{
 									{DockerImageReference: "some.other/reference"},
 									{DockerImageReference: "index.docker.io/foo/bar"},
 								}},
@@ -592,10 +595,99 @@ func TestTransform(t *testing.T) {
 				continue
 			}
 
-			if !kapihelper.Semantic.DeepEqual(v.expected, v.obj) {
-				t.Errorf("%d: object: %s", i, diff.ObjectDiff(v.expected, v.obj))
+			// for compatibility with our set commands, we round trip internal types, which defaults them
+			expected, err := roundTrip(v.expected)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !kapihelper.Semantic.DeepEqual(expected, v.obj) {
+				t.Errorf("%d: object: %s", i, diff.ObjectDiff(expected, v.obj))
 				continue
 			}
 		}
 	}
+}
+
+func roundTrip(in runtime.Object) (runtime.Object, error) {
+	switch t := in.(type) {
+	case *core.Pod:
+		external := &v1.Pod{}
+		if err := legacyscheme.Scheme.Convert(t, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.Pod{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		return internal, nil
+	case *core.ReplicationController:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	case *kextensions.Deployment:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	case *kextensions.DaemonSet:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	case *kextensions.ReplicaSet:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	case *appsapi.DeploymentConfig:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	case *kbatch.Job:
+		external := &v1.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(&t.Spec.Template.Spec, external, nil); err != nil {
+			return nil, err
+		}
+		internal := &core.PodSpec{}
+		if err := legacyscheme.Scheme.Convert(external, internal, nil); err != nil {
+			return nil, err
+		}
+		t.Spec.Template.Spec = *internal
+		return t, nil
+	default:
+		return in, nil
+	}
+
 }

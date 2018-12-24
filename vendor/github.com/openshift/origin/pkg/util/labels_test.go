@@ -4,13 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	kmeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	appsv1 "github.com/openshift/api/apps/v1"
 	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
 	testtypes "github.com/openshift/origin/pkg/util/testing"
 )
@@ -25,19 +23,19 @@ func TestAddConfigLabels(t *testing.T) {
 		expectedLabels map[string]string
 	}{
 		{ // [0] Test nil + nil => nil
-			obj:            &corev1.Pod{},
+			obj:            &kapi.Pod{},
 			addLabels:      nilLabels,
 			err:            false,
 			expectedLabels: nilLabels,
 		},
 		{ // [1] Test nil + empty labels => empty labels
-			obj:            &corev1.Pod{},
+			obj:            &kapi.Pod{},
 			addLabels:      map[string]string{},
 			err:            false,
 			expectedLabels: map[string]string{},
 		},
 		{ // [2] Test obj.Labels + nil => obj.Labels
-			obj: &corev1.Pod{
+			obj: &kapi.Pod{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"foo": "bar"}},
 			},
 			addLabels:      nilLabels,
@@ -45,7 +43,7 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "bar"},
 		},
 		{ // [3] Test obj.Labels + empty labels => obj.Labels
-			obj: &corev1.Pod{
+			obj: &kapi.Pod{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"foo": "bar"}},
 			},
 			addLabels:      map[string]string{},
@@ -53,13 +51,13 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "bar"},
 		},
 		{ // [4] Test nil + addLabels => addLabels
-			obj:            &corev1.Pod{},
+			obj:            &kapi.Pod{},
 			addLabels:      map[string]string{"foo": "bar"},
 			err:            false,
 			expectedLabels: map[string]string{"foo": "bar"},
 		},
 		{ // [5] Test obj.labels + addLabels => expectedLabels
-			obj: &corev1.Service{
+			obj: &kapi.Service{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"baz": ""}},
 			},
 			addLabels:      map[string]string{"foo": "bar"},
@@ -67,7 +65,7 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "bar", "baz": ""},
 		},
 		{ // [6] Test conflicting keys with the same value
-			obj: &corev1.Service{
+			obj: &kapi.Service{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"foo": "same value"}},
 			},
 			addLabels:      map[string]string{"foo": "same value"},
@@ -75,7 +73,7 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "same value"},
 		},
 		{ // [7] Test conflicting keys with a different value
-			obj: &corev1.Service{
+			obj: &kapi.Service{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"foo": "first value"}},
 			},
 			addLabels:      map[string]string{"foo": "second value"},
@@ -83,12 +81,12 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "second value"},
 		},
 		{ // [8] Test conflicting keys with the same value in ReplicationController nested labels
-			obj: &corev1.ReplicationController{
+			obj: &kapi.ReplicationController{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"foo": "same value"},
 				},
-				Spec: corev1.ReplicationControllerSpec{
-					Template: &corev1.PodTemplateSpec{
+				Spec: kapi.ReplicationControllerSpec{
+					Template: &kapi.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{},
 						},
@@ -100,12 +98,12 @@ func TestAddConfigLabels(t *testing.T) {
 			expectedLabels: map[string]string{"foo": "same value"},
 		},
 		{ // [9] Test adding labels to a DeploymentConfig object
-			obj: &appsv1.DeploymentConfig{
+			obj: &appsapi.DeploymentConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"foo": "first value"},
 				},
-				Spec: appsv1.DeploymentConfigSpec{
-					Template: &corev1.PodTemplateSpec{
+				Spec: appsapi.DeploymentConfigSpec{
+					Template: &kapi.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{"foo": "first value"},
 						},

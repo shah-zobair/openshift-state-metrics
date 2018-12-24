@@ -70,7 +70,6 @@ type externalIPRanger struct {
 }
 
 var _ admission.Interface = &externalIPRanger{}
-var _ admission.ValidationInterface = &externalIPRanger{}
 
 // ParseRejectAdmitCIDRRules calculates a blacklist and whitelist from a list of string CIDR rules (treating
 // a leading ! as a negation). Returns an error if any rule is invalid.
@@ -118,7 +117,7 @@ func (s NetworkSlice) Contains(ip net.IP) bool {
 }
 
 // Admit determines if the service should be admitted based on the configured network CIDR.
-func (r *externalIPRanger) Validate(a admission.Attributes) error {
+func (r *externalIPRanger) Admit(a admission.Attributes) error {
 	if a.GetResource().GroupResource() != kapi.Resource("services") {
 		return nil
 	}

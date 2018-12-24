@@ -1,7 +1,6 @@
 package secretinjector
 
 import (
-	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -34,18 +33,8 @@ type secretInjector struct {
 }
 
 var _ = oadmission.WantsRESTClientConfig(&secretInjector{})
-var _ = admission.MutationInterface(&secretInjector{})
-var _ = admission.ValidationInterface(&secretInjector{})
 
 func (si *secretInjector) Admit(attr admission.Attributes) (err error) {
-	return si.admit(attr, true)
-}
-
-func (si *secretInjector) Validate(attr admission.Attributes) (err error) {
-	return si.admit(attr, false)
-}
-
-func (si *secretInjector) admit(attr admission.Attributes, mutationAllowed bool) (err error) {
 	bc, ok := attr.GetObject().(*buildapi.BuildConfig)
 	if !ok {
 		return nil
@@ -104,11 +93,7 @@ func (si *secretInjector) admit(attr admission.Attributes, mutationAllowed bool)
 	if match := urlpattern.Match(patterns, url); match != nil {
 		secretName := match.Cookie.(string)
 		glog.V(4).Infof(`secretinjector: matched secret "%s/%s" to buildconfig "%s"`, namespace, secretName, bc.GetName())
-		if mutationAllowed {
-			bc.Spec.Source.SourceSecret = &api.LocalObjectReference{Name: secretName}
-		} else {
-			return admission.NewForbidden(attr, fmt.Errorf("mutated spec.source.sourceSecret, expected: %v, got %v", api.LocalObjectReference{Name: secretName}, bc.Spec.Source.SourceSecret))
-		}
+		bc.Spec.Source.SourceSecret = &api.LocalObjectReference{Name: secretName}
 	}
 
 	return nil

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	rbacv1 "k8s.io/api/rbac/v1"
-	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kutilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -57,7 +56,7 @@ func ScopesToRules(scopes []string, namespace string, clusterRoleGetter rbaclist
 
 // ScopesToVisibleNamespaces returns a list of namespaces that the provided scopes have "get" access to.
 // This exists only to support efficiently list/watch of projects (ACLed namespaces)
-func ScopesToVisibleNamespaces(scopes []string, clusterRoleGetter rbaclisters.ClusterRoleLister, ignoreUnhandledScopes bool) (sets.String, error) {
+func ScopesToVisibleNamespaces(scopes []string, clusterRoleGetter rbaclisters.ClusterRoleLister) (sets.String, error) {
 	if len(scopes) == 0 {
 		return sets.NewString("*"), nil
 	}
@@ -82,7 +81,7 @@ func ScopesToVisibleNamespaces(scopes []string, clusterRoleGetter rbaclisters.Cl
 			}
 		}
 
-		if !found && !ignoreUnhandledScopes {
+		if !found {
 			errors = append(errors, fmt.Errorf("no scope evaluator found for %q", scope))
 		}
 	}
@@ -171,15 +170,12 @@ func DescribeScopes(scopes []string) map[string]string {
 type userEvaluator struct{}
 
 func (userEvaluator) Handles(scope string) bool {
-	switch scope {
-	case UserFull, UserInfo, UserAccessCheck, UserListScopedProjects, UserListAllProjects:
-		return true
-	}
-	return false
+	return strings.HasPrefix(scope, UserIndicator)
 }
 
-func (e userEvaluator) Validate(scope string) error {
-	if e.Handles(scope) {
+func (userEvaluator) Validate(scope string) error {
+	switch scope {
+	case UserFull, UserInfo, UserAccessCheck, UserListScopedProjects, UserListAllProjects:
 		return nil
 	}
 
@@ -393,9 +389,6 @@ func (e clusterRoleEvaluator) resolveRules(scope string, clusterRoleGetter rbacl
 
 	role, err := clusterRoleGetter.Get(roleName)
 	if err != nil {
-		if kapierrors.IsNotFound(err) {
-			return []rbacv1.PolicyRule{}, nil
-		}
 		return nil, err
 	}
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -40,7 +41,7 @@ func NewNewOptions(streams genericclioptions.IOStreams) *NewOptions {
 	}
 }
 
-func NewRelease(f kcmdutil.Factory, parentName string, streams genericclioptions.IOStreams) *cobra.Command {
+func NewRelease(f kcmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
 	o := NewNewOptions(streams)
 	cmd := &cobra.Command{
 		Use:   "new",
@@ -55,18 +56,14 @@ func NewRelease(f kcmdutil.Factory, parentName string, streams genericclioptions
 			in the '/manifests' directory in their image. This command iterates over a set of
 			operator images and extracts those manifests into a single, ordered list of
 			Kubernetes objects that can then be iteratively updated on a cluster by the
-			cluster version operator when it is time to perform an update. Manifest files are
-			renamed to '99_<image_name>_<filename>' by default, and an operator author that
-			needs to provide a global-ordered file (before or after other operators) should
-			prepend '0000_' to their filename, which instructs the release builder to not
-			assign a component prefix.
+			cluster version operator when it is time to perform an update.
 
 			Experimental: This command is under active development and may change without notice.
 		`),
-		Example: templates.Examples(fmt.Sprintf(`
+		Example: templates.Examples(`
 			# Create a release from the latest origin images and push to a DockerHub repo
-			%[1]s new --from-image-stream=origin-v4.0 -n openshift --to-image docker.io/mycompany/myrepo:latest
-		`, parentName)),
+			%[1] new --from-image-stream=origin-v3.11 -n openshift --to-image docker.io/mycompany/myrepo:latest
+		`),
 		Run: func(cmd *cobra.Command, args []string) {
 			kcmdutil.CheckErr(o.Complete(f, cmd, args))
 			kcmdutil.CheckErr(o.Run())
@@ -166,6 +163,8 @@ type imageData struct {
 	Directory string
 }
 
+var matchPrefix = regexp.MustCompile(`^(\d+[-_])?(.*)$`)
+
 func findStatusTagEvent(tags []imageapi.NamedTagEventList, name string) *imageapi.TagEvent {
 	for _, tag := range tags {
 		if tag.Tag != name {
@@ -237,7 +236,6 @@ func (o *NewOptions) Run() error {
 				is.Spec.Tags = append(is.Spec.Tags, *ref)
 				ordered = append(ordered, tag.Tag)
 			}
-			fmt.Fprintf(o.ErrOut, "info: Found %d images in image stream\n", len(inputIS.Status.Tags))
 		default:
 			// TODO: add support for internal and referential
 			return fmt.Errorf("only image streams with public image repositories can be the source for a release payload")
@@ -251,11 +249,14 @@ func (o *NewOptions) Run() error {
 		for _, f := range files {
 			if f.IsDir() {
 				name := f.Name()
+				if matches := matchPrefix.FindStringSubmatch(name); matches != nil {
+					name = matches[2]
+				}
 				metadata[name] = imageData{Directory: filepath.Join(o.FromDirectory, f.Name())}
 				ordered = append(ordered, name)
 			}
-			if f.Name() == "image-references" {
-				data, err := ioutil.ReadFile(filepath.Join(o.FromDirectory, "image-references"))
+			if f.Name() == "images" {
+				data, err := ioutil.ReadFile(filepath.Join(o.FromDirectory, "images"))
 				if err != nil {
 					return err
 				}
@@ -270,7 +271,6 @@ func (o *NewOptions) Run() error {
 				continue
 			}
 		}
-		fmt.Fprintf(o.ErrOut, "info: Found %d operator manifest directories on disk\n", len(ordered))
 	default:
 		for _, m := range o.Mappings {
 			ordered = append(ordered, m.Source)
@@ -341,19 +341,6 @@ func (o *NewOptions) Run() error {
 			fmt.Fprintf(o.ErrOut, "info: Manifests will be extracted to %s\n", dir)
 		}
 
-		if len(is.Spec.Tags) > 0 {
-			if err := os.MkdirAll(dir, 0770); err != nil {
-				return err
-			}
-			data, err := json.MarshalIndent(is, "", "  ")
-			if err != nil {
-				return err
-			}
-			if err := ioutil.WriteFile(filepath.Join(dir, "image-references"), data, 0640); err != nil {
-				return err
-			}
-		}
-
 		opts := extract.NewOptions(genericclioptions.IOStreams{Out: o.Out, ErrOut: o.ErrOut})
 		opts.OnlyFiles = true
 		opts.MaxPerRegistry = o.MaxPerRegistry
@@ -366,9 +353,11 @@ func (o *NewOptions) Run() error {
 			}
 		}
 
-		for i := range is.Spec.Tags {
-			tag := is.Spec.Tags[i]
+		for _, tag := range is.Spec.Tags {
 			dstDir := filepath.Join(dir, tag.Name)
+			if err := os.MkdirAll(dstDir, 0770); err != nil {
+				return err
+			}
 			src := tag.From.Name
 			ref, err := imagereference.Parse(src)
 			if err != nil {
@@ -388,10 +377,7 @@ func (o *NewOptions) Run() error {
 						glog.V(2).Infof("Image %s has no io.openshift.release.operator label, skipping", m.ImageRef)
 						return false, nil
 					}
-					if err := os.MkdirAll(dstDir, 0770); err != nil {
-						return false, err
-					}
-					fmt.Fprintf(o.Out, "Loading manifests from %s: %s ...\n", tag.Name, src)
+					fmt.Fprintf(o.Out, "Loading manifests from %s ...\n", src)
 					return true, nil
 				},
 			})
@@ -418,21 +404,15 @@ func (o *NewOptions) Run() error {
 
 	switch {
 	case len(o.ToFile) > 0:
-		var w io.WriteCloser
-		if o.ToFile == "-" {
-			w = nopCloser{o.Out}
-		} else {
-			f, err := os.OpenFile(o.ToFile, os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0750)
-			if err != nil {
-				return err
-			}
-			w = f
-		}
-		if _, err := io.Copy(w, pr); err != nil {
-			w.Close()
+		f, err := os.OpenFile(o.ToFile, os.O_CREATE|os.O_TRUNC|os.O_APPEND|os.O_WRONLY, 0750)
+		if err != nil {
 			return err
 		}
-		if err := w.Close(); err != nil {
+		if _, err := io.Copy(f, pr); err != nil {
+			f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
 			return err
 		}
 	case len(o.ToImage) > 0:
@@ -457,7 +437,6 @@ func (o *NewOptions) Run() error {
 			return err
 		}
 	default:
-		fmt.Fprintf(o.ErrOut, "info: Extracting operator contents to disk without building a release artifact\n")
 		if _, err := io.Copy(ioutil.Discard, pr); err != nil {
 			return err
 		}
@@ -465,7 +444,7 @@ func (o *NewOptions) Run() error {
 
 	sort.Strings(operators)
 	if len(operators) == 0 {
-		fmt.Fprintf(o.ErrOut, "warning: No operator metadata was found, no operators will be part of the release.\n")
+		fmt.Fprintf(o.ErrOut, "warning: No manifest metadata was found in the provided images or directory, no top-level operators will be created.\n")
 	} else {
 		fmt.Fprintf(o.Out, "Built update image content from %d operators in %d components: %s\n", len(operators), len(metadata), strings.Join(operators, ", "))
 	}
@@ -477,11 +456,7 @@ func (o *NewOptions) Run() error {
 	return nil
 }
 
-type nopCloser struct {
-	io.Writer
-}
-
-func (_ nopCloser) Close() error { return nil }
+var hasNumberPrefix = regexp.MustCompile(`^\d+_`)
 
 // writeNestedTarHeader writes a series of nested tar headers, starting with parts[0] and joining each
 // successive part, but only if the path does not exist already.
@@ -543,7 +518,9 @@ func writePayload(w io.Writer, now time.Time, is *imageapi.ImageStream, ordered 
 			continue
 		}
 
-		transform := NopManifestMapper
+		transform := func(data []byte) ([]byte, error) {
+			return data, nil
+		}
 
 		if fi := takeFileByName(&contents, "image-references"); fi != nil {
 			path := filepath.Join(data.Directory, fi.Name())
@@ -560,10 +537,8 @@ func writePayload(w io.Writer, now time.Time, is *imageapi.ImageStream, ordered 
 			}
 			filename := fi.Name()
 
-			// components that don't declare that they need to be part of the global order
-			// get put in a scoped bucket at the end. Only a few components should need to
-			// be in the global order.
-			if !strings.HasPrefix(filename, "0000_") {
+			// give every file a unique name and ordering
+			if !hasNumberPrefix.MatchString(filename) {
 				filename = fmt.Sprintf("99_%s_%s", name, filename)
 			}
 			if count, ok := files[filename]; ok {
@@ -589,7 +564,6 @@ func writePayload(w io.Writer, now time.Time, is *imageapi.ImageStream, ordered 
 			if err := tw.WriteHeader(&tar.Header{Mode: 0444, ModTime: now, Typeflag: tar.TypeReg, Name: dst, Size: int64(len(modified))}); err != nil {
 				return nil, err
 			}
-			glog.V(6).Infof("Writing payload to %s\n%s", dst, string(modified))
 			if _, err := tw.Write(modified); err != nil {
 				return nil, err
 			}

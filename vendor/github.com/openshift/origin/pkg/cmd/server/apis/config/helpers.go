@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
@@ -310,6 +311,26 @@ func DefaultClientTransport(rt http.RoundTripper) http.RoundTripper {
 	// TODO: this should be configured by the caller, not in this method.
 	transport.MaxIdleConnsPerHost = 100
 	return transport
+}
+
+// GetNamedCertificateMap returns a map of strings to *tls.Certificate, suitable for use in tls.Config#NamedCertificates
+// Returns an error if any of the certs cannot be loaded, or do not match the configured name
+// Returns nil if len(namedCertificates) == 0
+func GetNamedCertificateMap(namedCertificates []NamedCertificate) (map[string]*tls.Certificate, error) {
+	if len(namedCertificates) == 0 {
+		return nil, nil
+	}
+	namedCerts := map[string]*tls.Certificate{}
+	for _, namedCertificate := range namedCertificates {
+		cert, err := tls.LoadX509KeyPair(namedCertificate.CertFile, namedCertificate.KeyFile)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range namedCertificate.Names {
+			namedCerts[name] = &cert
+		}
+	}
+	return namedCerts, nil
 }
 
 func GetOAuthClientCertCAs(options MasterConfig) ([]*x509.Certificate, error) {

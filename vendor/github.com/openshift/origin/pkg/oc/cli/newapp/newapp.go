@@ -24,10 +24,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/client-go/kubernetes"
-	corev1typedclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
+	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	ctl "k8s.io/kubernetes/pkg/kubectl"
 	kcmd "k8s.io/kubernetes/pkg/kubectl/cmd"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
@@ -40,21 +40,20 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	imagev1typedclient "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
-	routev1typedclient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
-	templatev1typedclient "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
 	"github.com/openshift/library-go/pkg/git"
 	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/bulk"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/cmd/util/print"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
-	imageutil "github.com/openshift/origin/pkg/image/util"
+	imageclientinternal "github.com/openshift/origin/pkg/image/generated/internalclientset"
 	"github.com/openshift/origin/pkg/oc/lib/newapp"
 	newapp "github.com/openshift/origin/pkg/oc/lib/newapp/app"
 	newcmd "github.com/openshift/origin/pkg/oc/lib/newapp/cmd"
 	dockerutil "github.com/openshift/origin/pkg/oc/lib/newapp/docker"
 	routeapi "github.com/openshift/origin/pkg/route/apis/route"
+	routeclientinternal "github.com/openshift/origin/pkg/route/generated/internalclientset"
+	templateclientinternal "github.com/openshift/origin/pkg/template/generated/internalclientset"
 	"github.com/openshift/origin/pkg/util"
 )
 
@@ -228,10 +227,11 @@ func (o *ObjectGeneratorOptions) Complete(baseName, commandName string, f kcmdut
 	o.CommandName = commandName
 
 	o.LogsForObject = polymorphichelpers.LogsForObjectFn
-	o.Printer, err = o.PrintFlags.ToPrinter()
+	printer, err := o.PrintFlags.ToPrinter()
 	if err != nil {
 		return err
 	}
+	o.Printer = &versionedPrintObj{printer, c}
 
 	if err := CompleteAppConfig(o.Config, f, c, args); err != nil {
 		return err
@@ -344,18 +344,7 @@ func (o *AppOptions) RunNewApp() error {
 		}
 
 		if o.Action.ShouldPrint() {
-			// TODO(juanvallejo): this needs to be fixed by updating QueryResult.List to be of type corev1.List
-			printableList := &corev1.List{
-				// this is ok because we know exactly how we want to be serialized
-				TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String(), Kind: "List"},
-			}
-			for _, obj := range result.List.Items {
-				printableList.Items = append(printableList.Items, runtime.RawExtension{
-					Object: obj,
-				})
-			}
-
-			return o.Printer.PrintObj(printableList, o.Out)
+			return o.Printer.PrintObj(result.List, o.Out)
 		}
 
 		return printHumanReadableQueryResult(result, out, o.BaseName, o.CommandName)
@@ -392,17 +381,7 @@ func (o *AppOptions) RunNewApp() error {
 	}
 
 	if o.Action.ShouldPrint() {
-		// TODO(juanvallejo): this needs to be fixed by updating QueryResult.List to be of type corev1.List
-		printableList := &corev1.List{
-			// this is ok because we know exactly how we want to be serialized
-			TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String(), Kind: "List"},
-		}
-		for _, obj := range result.List.Items {
-			printableList.Items = append(printableList.Items, runtime.RawExtension{
-				Object: obj,
-			})
-		}
-		return o.Printer.PrintObj(printableList, o.Out)
+		return o.Printer.PrintObj(result.List, o.Out)
 	}
 
 	if result.GeneratedJobs {
@@ -476,7 +455,7 @@ func (o *AppOptions) RunNewApp() error {
 		case *routev1.Route:
 			containsRoute = true
 			if len(t.Spec.Host) > 0 {
-				var route *routev1.Route
+				var route *routeapi.Route
 				//check if route processing was completed and host field is prepopulated by router
 				err := wait.PollImmediate(500*time.Millisecond, RoutePollTimeout, func() (bool, error) {
 					route, err = config.RouteClient.Routes(t.Namespace).Get(t.Name, metav1.GetOptions{})
@@ -548,8 +527,8 @@ func followInstallation(config *newcmd.AppConfig, clientGetter genericclioptions
 
 	// we cannot retrieve logs until the pod is out of pending
 	// TODO: move this to the server side
-	podClient := config.KubeClient.CoreV1().Pods(pod.Namespace)
-	if err := wait.PollImmediate(500*time.Millisecond, 60*time.Second, installationStarted(podClient, pod.Name, config.KubeClient.CoreV1().Secrets(pod.Namespace))); err != nil {
+	podClient := config.KubeClient.Core().Pods(pod.Namespace)
+	if err := wait.PollImmediate(500*time.Millisecond, 60*time.Second, installationStarted(podClient, pod.Name, config.KubeClient.Core().Secrets(pod.Namespace))); err != nil {
 		return err
 	}
 
@@ -583,13 +562,13 @@ func followInstallation(config *newcmd.AppConfig, clientGetter genericclioptions
 	return nil
 }
 
-func installationStarted(c corev1typedclient.PodInterface, name string, s corev1typedclient.SecretInterface) wait.ConditionFunc {
+func installationStarted(c kcoreclient.PodInterface, name string, s kcoreclient.SecretInterface) wait.ConditionFunc {
 	return func() (bool, error) {
 		pod, err := c.Get(name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
-		if pod.Status.Phase == corev1.PodPending {
+		if pod.Status.Phase == kapi.PodPending {
 			return false, nil
 		}
 		// delete a secret named the same as the pod if it exists
@@ -605,7 +584,7 @@ func installationStarted(c corev1typedclient.PodInterface, name string, s corev1
 	}
 }
 
-func installationComplete(c corev1typedclient.PodInterface, name string, out io.Writer) wait.ConditionFunc {
+func installationComplete(c kcoreclient.PodInterface, name string, out io.Writer) wait.ConditionFunc {
 	return func() (bool, error) {
 		pod, err := c.Get(name, metav1.GetOptions{})
 		if err != nil {
@@ -615,13 +594,13 @@ func installationComplete(c corev1typedclient.PodInterface, name string, out io.
 			return false, nil
 		}
 		switch pod.Status.Phase {
-		case corev1.PodSucceeded:
+		case kapi.PodSucceeded:
 			fmt.Fprintf(out, "--> Success\n")
 			if err := c.Delete(name, nil); err != nil {
 				glog.V(4).Infof("Failed to delete install pod %s: %v", name, err)
 			}
 			return true, nil
-		case corev1.PodFailed:
+		case kapi.PodFailed:
 			return true, fmt.Errorf("installation of %q did not complete successfully", name)
 		default:
 			return false, nil
@@ -677,28 +656,30 @@ func CompleteAppConfig(config *newcmd.AppConfig, f kcmdutil.Factory, c *cobra.Co
 		return err
 	}
 
+	kclient, err := f.ClientSet()
+	if err != nil {
+		return err
+	}
+	config.KubeClient = kclient
+	dockerClient, _ := getDockerClient()
+
 	clientConfig, err := f.ToRESTConfig()
 	if err != nil {
 		return err
 	}
-
-	config.KubeClient, err = kubernetes.NewForConfig(clientConfig)
-
-	dockerClient, _ := getDockerClient()
-
-	imageClient, err := imagev1typedclient.NewForConfig(clientConfig)
+	imageClient, err := imageclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	templateClient, err := templatev1typedclient.NewForConfig(clientConfig)
+	templateClient, err := templateclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	routeClient, err := routev1typedclient.NewForConfig(clientConfig)
+	routeClient, err := routeclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	config.SetOpenShiftClient(imageClient, templateClient, routeClient, namespace, dockerClient)
+	config.SetOpenShiftClient(imageClient.Image(), templateClient.Template(), routeClient.Route(), namespace, dockerClient)
 
 	if config.AllowSecretUse {
 		cfg, err := f.ToRESTConfig()
@@ -1050,7 +1031,7 @@ func printHumanReadableQueryResult(r *newcmd.QueryResult, out io.Writer, baseNam
 			templates = append(templates, match)
 		case match.IsImage() && match.ImageStream != nil:
 			imageStreams = append(imageStreams, match)
-		case match.IsImage() && match.DockerImage != nil:
+		case match.IsImage() && match.Image != nil:
 			dockerImages = append(dockerImages, match)
 		}
 	}
@@ -1084,13 +1065,9 @@ func printHumanReadableQueryResult(r *newcmd.QueryResult, out io.Writer, baseNam
 			tags := "<none>"
 			if len(imageStream.Status.Tags) > 0 {
 				set := sets.NewString()
-				for _, tag := range imageStream.Status.Tags {
-					if refTag, ok := imageutil.SpecHasTag(imageStream, tag.Tag); ok {
-						if !imageutil.HasAnnotationTag(&refTag, imageapi.TagReferenceAnnotationTagHidden) {
-							set.Insert(tag.Tag)
-						}
-					} else {
-						set.Insert(tag.Tag)
+				for tag := range imageStream.Status.Tags {
+					if !imageStream.Spec.Tags[tag].HasAnnotationTag(imageapi.TagReferenceAnnotationTagHidden) {
+						set.Insert(tag)
 					}
 				}
 				tags = strings.Join(set.List(), ", ")
@@ -1113,7 +1090,7 @@ func printHumanReadableQueryResult(r *newcmd.QueryResult, out io.Writer, baseNam
 		fmt.Fprintf(out, "Docker images (%s %s --docker-image=<docker-image> [--code=<source>])\n", baseName, commandName)
 		fmt.Fprintln(out, "-----")
 		for _, match := range dockerImages {
-			image := match.DockerImage
+			image := match.Image
 
 			name, tag, ok := imageapi.SplitImageStreamTag(match.Name)
 			if !ok {

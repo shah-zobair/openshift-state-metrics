@@ -42,7 +42,6 @@ type ingressAdmission struct {
 }
 
 var _ = initializer.WantsAuthorizer(&ingressAdmission{})
-var _ = admission.ValidationInterface(&ingressAdmission{})
 
 func NewIngressAdmission(config *ingressadmission.IngressAdmissionConfig) *ingressAdmission {
 	return &ingressAdmission{
@@ -81,7 +80,7 @@ func (r *ingressAdmission) ValidateInitialization() error {
 	return nil
 }
 
-func (r *ingressAdmission) Validate(a admission.Attributes) error {
+func (r *ingressAdmission) Admit(a admission.Attributes) error {
 	if a.GetResource().GroupResource() == kextensions.Resource("ingresses") {
 		switch a.GetOperation() {
 		case admission.Create:

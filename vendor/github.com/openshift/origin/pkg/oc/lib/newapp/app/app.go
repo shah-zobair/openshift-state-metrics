@@ -10,15 +10,15 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	appsv1 "github.com/openshift/api/apps/v1"
-	buildv1 "github.com/openshift/api/build/v1"
 	"github.com/openshift/library-go/pkg/git"
+	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/oc/lib/newapp"
 	"github.com/openshift/origin/pkg/util"
 
@@ -110,8 +110,8 @@ type SourceRef struct {
 	Dir        string
 	Name       string
 	ContextDir string
-	Secrets    []buildv1.SecretBuildSource
-	ConfigMaps []buildv1.ConfigMapBuildSource
+	Secrets    []buildapi.SecretBuildSource
+	ConfigMaps []buildapi.ConfigMapBuildSource
 
 	SourceImage     *ImageRef
 	ImageSourcePath string
@@ -136,59 +136,55 @@ func (r *SourceRef) SuggestName() (string, bool) {
 }
 
 // BuildSource returns an OpenShift BuildSource from the SourceRef
-func (r *SourceRef) BuildSource() (*buildv1.BuildSource, []buildv1.BuildTriggerPolicy) {
-	triggers := []buildv1.BuildTriggerPolicy{
+func (r *SourceRef) BuildSource() (*buildapi.BuildSource, []buildapi.BuildTriggerPolicy) {
+	triggers := []buildapi.BuildTriggerPolicy{
 		{
-			Type: buildv1.GitHubWebHookBuildTriggerType,
-			GitHubWebHook: &buildv1.WebHookTrigger{
+			Type: buildapi.GitHubWebHookBuildTriggerType,
+			GitHubWebHook: &buildapi.WebHookTrigger{
 				Secret: GenerateSecret(20),
 			},
 		},
 		{
-			Type: buildv1.GenericWebHookBuildTriggerType,
-			GenericWebHook: &buildv1.WebHookTrigger{
+			Type: buildapi.GenericWebHookBuildTriggerType,
+			GenericWebHook: &buildapi.WebHookTrigger{
 				Secret: GenerateSecret(20),
 			},
 		},
 	}
-	source := &buildv1.BuildSource{}
+	source := &buildapi.BuildSource{}
 	source.Secrets = r.Secrets
 	source.ConfigMaps = r.ConfigMaps
 
 	if len(r.DockerfileContents) != 0 {
 		source.Dockerfile = &r.DockerfileContents
-		source.Type = buildv1.BuildSourceDockerfile
 	}
 	if r.URL != nil {
-		source.Git = &buildv1.GitBuildSource{
+		source.Git = &buildapi.GitBuildSource{
 			URI: r.URL.StringNoFragment(),
 			Ref: r.URL.URL.Fragment,
 		}
 		source.ContextDir = r.ContextDir
-		source.Type = buildv1.BuildSourceGit
 	}
 	if r.Binary {
-		source.Binary = &buildv1.BinaryBuildSource{}
-		source.Type = buildv1.BuildSourceBinary
+		source.Binary = &buildapi.BinaryBuildSource{}
 	}
 	if r.SourceImage != nil {
 		objRef := r.SourceImage.ObjectReference()
-		imgSrc := buildv1.ImageSource{}
+		imgSrc := buildapi.ImageSource{}
 		imgSrc.From = objRef
-		imgSrc.Paths = []buildv1.ImageSourcePath{
+		imgSrc.Paths = []buildapi.ImageSourcePath{
 			{
 				SourcePath:     r.ImageSourcePath,
 				DestinationDir: r.ImageDestPath,
 			},
 		}
-		triggers = append(triggers, buildv1.BuildTriggerPolicy{
-			Type: buildv1.ImageChangeBuildTriggerType,
-			ImageChange: &buildv1.ImageChangeTrigger{
+		triggers = append(triggers, buildapi.BuildTriggerPolicy{
+			Type: buildapi.ImageChangeBuildTriggerType,
+			ImageChange: &buildapi.ImageChangeTrigger{
 				From: &objRef,
 			},
 		})
-		source.Images = []buildv1.ImageSource{imgSrc}
-		source.Type = buildv1.BuildSourceImage
+		source.Images = []buildapi.ImageSource{imgSrc}
 	}
 	return source, triggers
 }
@@ -200,19 +196,18 @@ type BuildStrategyRef struct {
 }
 
 // BuildStrategy builds an OpenShift BuildStrategy from a BuildStrategyRef
-func (s *BuildStrategyRef) BuildStrategy(env Environment, dockerStrategyOptions *buildv1.DockerStrategyOptions) (*buildv1.BuildStrategy, []buildv1.BuildTriggerPolicy) {
+func (s *BuildStrategyRef) BuildStrategy(env Environment, dockerStrategyOptions *buildapi.DockerStrategyOptions) (*buildapi.BuildStrategy, []buildapi.BuildTriggerPolicy) {
 	switch s.Strategy {
 	case generate.StrategyPipeline:
-		return &buildv1.BuildStrategy{
-			JenkinsPipelineStrategy: &buildv1.JenkinsPipelineBuildStrategy{
+		return &buildapi.BuildStrategy{
+			JenkinsPipelineStrategy: &buildapi.JenkinsPipelineBuildStrategy{
 				Env: env.List(),
 			},
-			Type: buildv1.JenkinsPipelineBuildStrategyType,
 		}, s.Base.BuildTriggers()
 
 	case generate.StrategyDocker:
-		var triggers []buildv1.BuildTriggerPolicy
-		strategy := &buildv1.DockerBuildStrategy{
+		var triggers []buildapi.BuildTriggerPolicy
+		strategy := &buildapi.DockerBuildStrategy{
 			Env: env.List(),
 		}
 		if dockerStrategyOptions != nil {
@@ -223,18 +218,16 @@ func (s *BuildStrategyRef) BuildStrategy(env Environment, dockerStrategyOptions 
 			strategy.From = &ref
 			triggers = s.Base.BuildTriggers()
 		}
-		return &buildv1.BuildStrategy{
+		return &buildapi.BuildStrategy{
 			DockerStrategy: strategy,
-			Type:           buildv1.DockerBuildStrategyType,
 		}, triggers
 
 	case generate.StrategySource:
-		return &buildv1.BuildStrategy{
-			SourceStrategy: &buildv1.SourceBuildStrategy{
+		return &buildapi.BuildStrategy{
+			SourceStrategy: &buildapi.SourceBuildStrategy{
 				From: s.Base.ObjectReference(),
 				Env:  env.List(),
 			},
-			Type: buildv1.SourceBuildStrategyType,
 		}, s.Base.BuildTriggers()
 	}
 
@@ -247,28 +240,28 @@ type BuildRef struct {
 	Source                *SourceRef
 	Input                 *ImageRef
 	Strategy              *BuildStrategyRef
-	DockerStrategyOptions *buildv1.DockerStrategyOptions
+	DockerStrategyOptions *buildapi.DockerStrategyOptions
 	Output                *ImageRef
 	Env                   Environment
 	Binary                bool
 }
 
 // BuildConfig creates a buildConfig resource from the build configuration reference
-func (r *BuildRef) BuildConfig() (*buildv1.BuildConfig, error) {
+func (r *BuildRef) BuildConfig() (*buildapi.BuildConfig, error) {
 	name, ok := NameSuggestions{r.Source, r.Output}.SuggestName()
 	if !ok {
 		return nil, fmt.Errorf("unable to suggest a name for this BuildConfig from %q", r.Source.URL)
 	}
-	var source *buildv1.BuildSource
-	triggers := []buildv1.BuildTriggerPolicy{}
+	var source *buildapi.BuildSource
+	triggers := []buildapi.BuildTriggerPolicy{}
 	if r.Source != nil {
 		source, triggers = r.Source.BuildSource()
 	}
 	if source == nil {
-		source = &buildv1.BuildSource{}
+		source = &buildapi.BuildSource{}
 	}
-	strategy := &buildv1.BuildStrategy{}
-	strategyTriggers := []buildv1.BuildTriggerPolicy{}
+	strategy := &buildapi.BuildStrategy{}
+	strategyTriggers := []buildapi.BuildTriggerPolicy{}
 	if r.Strategy != nil {
 		strategy, strategyTriggers = r.Strategy.BuildStrategy(r.Env, r.DockerStrategyOptions)
 	}
@@ -278,31 +271,29 @@ func (r *BuildRef) BuildConfig() (*buildv1.BuildConfig, error) {
 	}
 
 	if !r.Binary {
-		configChangeTrigger := buildv1.BuildTriggerPolicy{
-			Type: buildv1.ConfigChangeBuildTriggerType,
+		configChangeTrigger := buildapi.BuildTriggerPolicy{
+			Type: buildapi.ConfigChangeBuildTriggerType,
 		}
 		triggers = append(triggers, configChangeTrigger)
 		triggers = append(triggers, strategyTriggers...)
 	} else {
 		// remove imagechangetriggers from binary buildconfigs because
 		// triggered builds will fail (no binary input available)
-		filteredTriggers := []buildv1.BuildTriggerPolicy{}
+		filteredTriggers := []buildapi.BuildTriggerPolicy{}
 		for _, trigger := range triggers {
-			if trigger.Type != buildv1.ImageChangeBuildTriggerType {
+			if trigger.Type != buildapi.ImageChangeBuildTriggerType {
 				filteredTriggers = append(filteredTriggers, trigger)
 			}
 		}
 		triggers = filteredTriggers
 	}
-	return &buildv1.BuildConfig{
-		// this is ok because we know exactly how we want to be serialized
-		TypeMeta: metav1.TypeMeta{APIVersion: buildv1.SchemeGroupVersion.String(), Kind: "BuildConfig"},
+	return &buildapi.BuildConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: buildv1.BuildConfigSpec{
+		Spec: buildapi.BuildConfigSpec{
 			Triggers: triggers,
-			CommonSpec: buildv1.CommonSpec{
+			CommonSpec: buildapi.CommonSpec{
 				Source:   *source,
 				Strategy: *strategy,
 				Output:   *output,
@@ -328,7 +319,7 @@ type DeploymentConfigRef struct {
 // DeploymentConfig creates a deploymentConfig resource from the deployment configuration reference
 //
 // TODO: take a pod template spec as argument
-func (r *DeploymentConfigRef) DeploymentConfig() (*appsv1.DeploymentConfig, error) {
+func (r *DeploymentConfigRef) DeploymentConfig() (*appsapi.DeploymentConfig, error) {
 	if len(r.Name) == 0 {
 		suggestions := NameSuggestions{}
 		for i := range r.Images {
@@ -350,14 +341,14 @@ func (r *DeploymentConfigRef) DeploymentConfig() (*appsv1.DeploymentConfig, erro
 		}
 	}
 
-	triggers := []appsv1.DeploymentTriggerPolicy{
+	triggers := []appsapi.DeploymentTriggerPolicy{
 		// By default, always deploy on change
 		{
-			Type: appsv1.DeploymentTriggerOnConfigChange,
+			Type: appsapi.DeploymentTriggerOnConfigChange,
 		},
 	}
 
-	template := corev1.PodSpec{}
+	template := kapi.PodSpec{}
 	for i := range r.Images {
 		c, containerTriggers, err := r.Images[i].DeployableContainer()
 		if err != nil {
@@ -370,10 +361,10 @@ func (r *DeploymentConfigRef) DeploymentConfig() (*appsv1.DeploymentConfig, erro
 	// Create EmptyDir volumes for all container volume mounts
 	for _, c := range template.Containers {
 		for _, v := range c.VolumeMounts {
-			template.Volumes = append(template.Volumes, corev1.Volume{
+			template.Volumes = append(template.Volumes, kapi.Volume{
 				Name: v.Name,
-				VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumDefault},
+				VolumeSource: kapi.VolumeSource{
+					EmptyDir: &kapi.EmptyDirVolumeSource{Medium: kapi.StorageMediumDefault},
 				},
 			})
 		}
@@ -383,17 +374,15 @@ func (r *DeploymentConfigRef) DeploymentConfig() (*appsv1.DeploymentConfig, erro
 		template.Containers[i].Env = append(template.Containers[i].Env, r.Env.List()...)
 	}
 
-	dc := &appsv1.DeploymentConfig{
-		// this is ok because we know exactly how we want to be serialized
-		TypeMeta: metav1.TypeMeta{APIVersion: appsv1.SchemeGroupVersion.String(), Kind: "DeploymentConfig"},
+	dc := &appsapi.DeploymentConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: r.Name,
 		},
-		Spec: appsv1.DeploymentConfigSpec{
+		Spec: appsapi.DeploymentConfigSpec{
 			Replicas: 1,
 			Test:     r.AsTest,
 			Selector: selector,
-			Template: &corev1.PodTemplateSpec{
+			Template: &kapi.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: selector,
 				},
@@ -405,9 +394,9 @@ func (r *DeploymentConfigRef) DeploymentConfig() (*appsv1.DeploymentConfig, erro
 	if r.PostHook != nil {
 		//dc.Spec.Strategy.Type = "Rolling"
 		if len(r.PostHook.Shell) > 0 {
-			dc.Spec.Strategy.RecreateParams = &appsv1.RecreateDeploymentStrategyParams{
-				Post: &appsv1.LifecycleHook{
-					ExecNewPod: &appsv1.ExecNewPodHook{
+			dc.Spec.Strategy.RecreateParams = &appsapi.RecreateDeploymentStrategyParams{
+				Post: &appsapi.LifecycleHook{
+					ExecNewPod: &appsapi.ExecNewPodHook{
 						Command: []string{"/bin/sh", "-c", r.PostHook.Shell},
 					},
 				},
@@ -429,8 +418,8 @@ func GenerateSecret(n int) string {
 
 // ContainerPortsFromString extracts sets of port specifications from a comma-delimited string. Each segment
 // must be a single port number (container port) or a colon delimited pair of ports (container port and host port).
-func ContainerPortsFromString(portString string) ([]corev1.ContainerPort, error) {
-	ports := []corev1.ContainerPort{}
+func ContainerPortsFromString(portString string) ([]kapi.ContainerPort, error) {
+	ports := []kapi.ContainerPort{}
 	for _, s := range strings.Split(portString, ",") {
 		port, ok := checkPortSpecSegment(s)
 		if !ok {
@@ -441,7 +430,7 @@ func ContainerPortsFromString(portString string) ([]corev1.ContainerPort, error)
 	return ports, nil
 }
 
-func checkPortSpecSegment(s string) (port corev1.ContainerPort, ok bool) {
+func checkPortSpecSegment(s string) (port kapi.ContainerPort, ok bool) {
 	if strings.Contains(s, ":") {
 		pair := strings.Split(s, ":")
 		if len(pair) != 2 {
@@ -455,14 +444,14 @@ func checkPortSpecSegment(s string) (port corev1.ContainerPort, ok bool) {
 		if err != nil {
 			return
 		}
-		return corev1.ContainerPort{ContainerPort: int32(container), HostPort: int32(host)}, true
+		return kapi.ContainerPort{ContainerPort: int32(container), HostPort: int32(host)}, true
 	}
 
 	container, err := strconv.Atoi(s)
 	if err != nil {
 		return
 	}
-	return corev1.ContainerPort{ContainerPort: int32(container)}, true
+	return kapi.ContainerPort{ContainerPort: int32(container)}, true
 }
 
 // LabelsFromSpec turns a set of specs NAME=VALUE or NAME- into a map of labels,
@@ -489,4 +478,63 @@ func LabelsFromSpec(spec []string) (map[string]string, []string, error) {
 		}
 	}
 	return labels, remove, nil
+}
+
+// TODO: move to pkg/runtime or pkg/api
+func AsVersionedObjects(objects []runtime.Object, typer runtime.ObjectTyper, convertor runtime.ObjectConvertor, versions ...schema.GroupVersion) []error {
+	var errs []error
+	for i, object := range objects {
+		kinds, _, err := typer.ObjectKinds(object)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if kindsInVersions(kinds, versions) {
+			continue
+		}
+		if !isInternalOnly(kinds) {
+			continue
+		}
+		converted, err := tryConvert(convertor, object, versions)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		objects[i] = converted
+	}
+	return errs
+}
+
+func isInternalOnly(kinds []schema.GroupVersionKind) bool {
+	for _, kind := range kinds {
+		if kind.Version != runtime.APIVersionInternal {
+			return false
+		}
+	}
+	return true
+}
+
+func kindsInVersions(kinds []schema.GroupVersionKind, versions []schema.GroupVersion) bool {
+	for _, kind := range kinds {
+		for _, version := range versions {
+			if kind.GroupVersion() == version {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// tryConvert attempts to convert the given object to the provided versions in order.
+func tryConvert(convertor runtime.ObjectConvertor, object runtime.Object, versions []schema.GroupVersion) (runtime.Object, error) {
+	var last error
+	for _, version := range versions {
+		obj, err := convertor.ConvertToVersion(object, version)
+		if err != nil {
+			last = err
+			continue
+		}
+		return obj, nil
+	}
+	return nil, last
 }

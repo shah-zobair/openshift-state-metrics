@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"reflect"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -320,56 +319,44 @@ func TestLimitRequestAdmission(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c, err := newClusterResourceOverride(test.config)
-			if err != nil {
-				t.Fatalf("%s: config de/serialize failed: %v", test.name, err)
-			}
-			// Override LimitRanger with limits from test case
-			c.(*clusterResourceOverridePlugin).limitRangesLister = fakeLimitRangeLister{
-				namespaceLister: fakeLimitRangeNamespaceLister{
-					limits: test.namespaceLimits,
-				},
-			}
-			c.(*clusterResourceOverridePlugin).SetProjectCache(fakeProjectCache(test.namespace))
-			attrs := admission.NewAttributesRecord(test.pod, nil, schema.GroupVersionKind{}, test.namespace.Name, "name", kapi.Resource("pods").WithVersion("version"), "", admission.Create, fakeUser())
-			clone := test.pod.DeepCopy()
-			if err = c.(admission.MutationInterface).Admit(attrs); err != nil {
-				t.Fatalf("%s: admission controller returned error: %v", test.name, err)
-			}
-			if err = c.(admission.ValidationInterface).Validate(attrs); err != nil {
-				t.Fatalf("%s: admission controller returned error: %v", test.name, err)
-			}
+		c, err := newClusterResourceOverride(test.config)
+		if err != nil {
+			t.Errorf("%s: config de/serialize failed: %v", test.name, err)
+			continue
+		}
+		// Override LimitRanger with limits from test case
+		c.(*clusterResourceOverridePlugin).limitRangesLister = fakeLimitRangeLister{
+			namespaceLister: fakeLimitRangeNamespaceLister{
+				limits: test.namespaceLimits,
+			},
+		}
+		c.(*clusterResourceOverridePlugin).SetProjectCache(fakeProjectCache(test.namespace))
+		attrs := admission.NewAttributesRecord(test.pod, nil, schema.GroupVersionKind{}, test.namespace.Name, "name", kapi.Resource("pods").WithVersion("version"), "", admission.Create, fakeUser())
+		if err = c.(admission.MutationInterface).Admit(attrs); err != nil {
+			t.Errorf("%s: admission controller returned error: %v", test.name, err)
+			continue
+		}
+		resources := test.pod.Spec.InitContainers[0].Resources // only test one container
+		if actual := resources.Requests[kapi.ResourceMemory]; test.expectedMemRequest.Cmp(actual) != 0 {
+			t.Errorf("%s: memory requests do not match; %v should be %v", test.name, actual, test.expectedMemRequest)
+		}
+		if actual := resources.Requests[kapi.ResourceCPU]; test.expectedCpuRequest.Cmp(actual) != 0 {
+			t.Errorf("%s: cpu requests do not match; %v should be %v", test.name, actual, test.expectedCpuRequest)
+		}
+		if actual := resources.Limits[kapi.ResourceCPU]; test.expectedCpuLimit.Cmp(actual) != 0 {
+			t.Errorf("%s: cpu limits do not match; %v should be %v", test.name, actual, test.expectedCpuLimit)
+		}
 
-			if !reflect.DeepEqual(test.pod, clone) {
-				attrs := admission.NewAttributesRecord(clone, nil, schema.GroupVersionKind{}, test.namespace.Name, "name", kapi.Resource("pods").WithVersion("version"), "", admission.Create, fakeUser())
-				if err = c.(admission.ValidationInterface).Validate(attrs); err == nil {
-					t.Fatalf("%s: admission controller returned no error, but should", test.name)
-				}
-			}
-
-			resources := test.pod.Spec.InitContainers[0].Resources // only test one container
-			if actual := resources.Requests[kapi.ResourceMemory]; test.expectedMemRequest.Cmp(actual) != 0 {
-				t.Errorf("%s: memory requests do not match; %v should be %v", test.name, actual, test.expectedMemRequest)
-			}
-			if actual := resources.Requests[kapi.ResourceCPU]; test.expectedCpuRequest.Cmp(actual) != 0 {
-				t.Errorf("%s: cpu requests do not match; %v should be %v", test.name, actual, test.expectedCpuRequest)
-			}
-			if actual := resources.Limits[kapi.ResourceCPU]; test.expectedCpuLimit.Cmp(actual) != 0 {
-				t.Errorf("%s: cpu limits do not match; %v should be %v", test.name, actual, test.expectedCpuLimit)
-			}
-
-			resources = test.pod.Spec.Containers[0].Resources // only test one container
-			if actual := resources.Requests[kapi.ResourceMemory]; test.expectedMemRequest.Cmp(actual) != 0 {
-				t.Errorf("%s: memory requests do not match; %v should be %v", test.name, actual, test.expectedMemRequest)
-			}
-			if actual := resources.Requests[kapi.ResourceCPU]; test.expectedCpuRequest.Cmp(actual) != 0 {
-				t.Errorf("%s: cpu requests do not match; %v should be %v", test.name, actual, test.expectedCpuRequest)
-			}
-			if actual := resources.Limits[kapi.ResourceCPU]; test.expectedCpuLimit.Cmp(actual) != 0 {
-				t.Errorf("%s: cpu limits do not match; %v should be %v", test.name, actual, test.expectedCpuLimit)
-			}
-		})
+		resources = test.pod.Spec.Containers[0].Resources // only test one container
+		if actual := resources.Requests[kapi.ResourceMemory]; test.expectedMemRequest.Cmp(actual) != 0 {
+			t.Errorf("%s: memory requests do not match; %v should be %v", test.name, actual, test.expectedMemRequest)
+		}
+		if actual := resources.Requests[kapi.ResourceCPU]; test.expectedCpuRequest.Cmp(actual) != 0 {
+			t.Errorf("%s: cpu requests do not match; %v should be %v", test.name, actual, test.expectedCpuRequest)
+		}
+		if actual := resources.Limits[kapi.ResourceCPU]; test.expectedCpuLimit.Cmp(actual) != 0 {
+			t.Errorf("%s: cpu limits do not match; %v should be %v", test.name, actual, test.expectedCpuLimit)
+		}
 	}
 }
 

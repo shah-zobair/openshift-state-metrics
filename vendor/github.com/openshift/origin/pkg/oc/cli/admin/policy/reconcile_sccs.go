@@ -10,30 +10,25 @@ import (
 	sccutil "github.com/openshift/origin/pkg/security/securitycontextconstraints/util"
 	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	corev1typedclient "k8s.io/client-go/kubernetes/typed/core/v1"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
+	kcoreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/templates"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
-	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/printers"
-	"k8s.io/kubernetes/pkg/kubectl/scheme"
 
-	securityv1 "github.com/openshift/api/security/v1"
-	securityv1typedclient "github.com/openshift/client-go/security/clientset/versioned/typed/security/v1"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
-	securityapiv1 "github.com/openshift/origin/pkg/security/apis/security/v1"
+	"github.com/openshift/origin/pkg/cmd/util/print"
+	securityapi "github.com/openshift/origin/pkg/security/apis/security"
+	securityclientinternal "github.com/openshift/origin/pkg/security/generated/internalclientset"
+	securitytypedclient "github.com/openshift/origin/pkg/security/generated/internalclientset/typed/security/internalversion"
 )
 
 // ReconcileSCCRecommendedName is the recommended command name
 const ReconcileSCCRecommendedName = "reconcile-sccs"
 
 type ReconcileSCCOptions struct {
-	PrintFlags *genericclioptions.PrintFlags
-
-	Printer printers.ResourcePrinter
-
 	// confirmed indicates that the data should be persisted
 	Confirmed bool
 	// union controls if we make additive changes to the users/groups/labels/annotations fields
@@ -46,8 +41,8 @@ type ReconcileSCCOptions struct {
 
 	Output string
 
-	SCCClient securityv1typedclient.SecurityContextConstraintsInterface
-	NSClient  corev1typedclient.NamespaceInterface
+	SCCClient securitytypedclient.SecurityContextConstraintsInterface
+	NSClient  kcoreclient.NamespaceInterface
 
 	genericclioptions.IOStreams
 }
@@ -80,8 +75,6 @@ var (
 // NewDefaultReconcileSCCOptions provides a ReconcileSCCOptions with default settings.
 func NewDefaultReconcileSCCOptions(streams genericclioptions.IOStreams) *ReconcileSCCOptions {
 	return &ReconcileSCCOptions{
-		PrintFlags: genericclioptions.NewPrintFlags("").WithTypeSetter(scheme.Scheme).WithDefaultOutput("yaml"),
-
 		Union:          true,
 		InfraNamespace: bootstrappolicy.DefaultOpenShiftInfraNamespace,
 		IOStreams:      streams,
@@ -121,22 +114,17 @@ func (o *ReconcileSCCOptions) Complete(cmd *cobra.Command, f kcmdutil.Factory, a
 	if err != nil {
 		return err
 	}
-	kClient, err := corev1typedclient.NewForConfig(clientConfig)
+	kClient, err := kcoreclient.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	securityClient, err := securityv1typedclient.NewForConfig(clientConfig)
+	securityClient, err := securityclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	o.SCCClient = securityClient.SecurityContextConstraints()
+	o.SCCClient = securityClient.Security().SecurityContextConstraints()
 	o.NSClient = kClient.Namespaces()
 	o.Output = kcmdutil.GetFlagString(cmd, "output")
-
-	o.Printer, err = o.PrintFlags.ToPrinter()
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -165,15 +153,15 @@ func (o *ReconcileSCCOptions) RunReconcileSCCs(cmd *cobra.Command, f kcmdutil.Fa
 	}
 
 	if !o.Confirmed {
-		objs := []runtime.Object{}
-		for _, obj := range newSCCs {
-			objs = append(objs, obj)
+		list := &kapi.List{}
+		for _, item := range newSCCs {
+			list.Items = append(list.Items, item)
 		}
-		for _, obj := range changedSCCs {
-			objs = append(objs, obj)
+		for _, item := range changedSCCs {
+			list.Items = append(list.Items, item)
 		}
-
-		if err := printObjectList(objs, o.Printer, o.Output, o.Out); err != nil {
+		fn := print.VersionedPrintObject(kcmdutil.PrintObject, cmd, o.Out)
+		if err := fn(list); err != nil {
 			return err
 		}
 	}
@@ -187,25 +175,20 @@ func (o *ReconcileSCCOptions) RunReconcileSCCs(cmd *cobra.Command, f kcmdutil.Fa
 // ChangedSCCs returns the SCCs that must be created and updated to match the
 // recommended bootstrap SCCs.
 func (o *ReconcileSCCOptions) ChangedSCCs() (
-	[]*securityv1.SecurityContextConstraints,
-	[]*securityv1.SecurityContextConstraints,
+	[]*securityapi.SecurityContextConstraints,
+	[]*securityapi.SecurityContextConstraints,
 	error) {
-	toUpdateSCCs := []*securityv1.SecurityContextConstraints{}
-	toCreateSCCs := []*securityv1.SecurityContextConstraints{}
+	toUpdateSCCs := []*securityapi.SecurityContextConstraints{}
+	toCreateSCCs := []*securityapi.SecurityContextConstraints{}
 
 	groups, users := bootstrappolicy.GetBoostrapSCCAccess(o.InfraNamespace)
 	bootstrapSCCs := bootstrappolicy.GetBootstrapSecurityContextConstraints(groups, users)
 
 	for _, expectedSCC := range bootstrapSCCs {
-		expectedSCCExternal := &securityv1.SecurityContextConstraints{}
-		if err := securityapiv1.Convert_security_SecurityContextConstraints_To_v1_SecurityContextConstraints(expectedSCC, expectedSCCExternal, nil); err != nil {
-			return nil, nil, err
-		}
-
 		actualSCC, err := o.SCCClient.Get(expectedSCC.Name, metav1.GetOptions{})
 		// if not found it needs to be created
 		if kapierrors.IsNotFound(err) {
-			toCreateSCCs = append(toCreateSCCs, expectedSCCExternal)
+			toCreateSCCs = append(toCreateSCCs, expectedSCC)
 			continue
 		}
 		if err != nil {
@@ -213,7 +196,7 @@ func (o *ReconcileSCCOptions) ChangedSCCs() (
 		}
 
 		// if found then we need to diff to see if it needs updated
-		if updatedSCC, needsUpdating := o.computeUpdatedSCC(*expectedSCCExternal, *actualSCC); needsUpdating {
+		if updatedSCC, needsUpdating := o.computeUpdatedSCC(*expectedSCC, *actualSCC); needsUpdating {
 			toUpdateSCCs = append(toUpdateSCCs, updatedSCC)
 		}
 	}
@@ -221,8 +204,8 @@ func (o *ReconcileSCCOptions) ChangedSCCs() (
 }
 
 // ReplaceChangedSCCs persists the changed SCCs.
-func (o *ReconcileSCCOptions) ReplaceChangedSCCs(newSCCs, changedSCCs []*securityv1.SecurityContextConstraints) error {
-	applyOnConstraints := func(sccs []*securityv1.SecurityContextConstraints, fn func(*securityv1.SecurityContextConstraints) (*securityv1.SecurityContextConstraints, error)) error {
+func (o *ReconcileSCCOptions) ReplaceChangedSCCs(newSCCs, changedSCCs []*securityapi.SecurityContextConstraints) error {
+	applyOnConstraints := func(sccs []*securityapi.SecurityContextConstraints, fn func(*securityapi.SecurityContextConstraints) (*securityapi.SecurityContextConstraints, error)) error {
 		for i := range sccs {
 			updatedSCC, err := fn(sccs[i])
 			if err != nil {
@@ -246,7 +229,7 @@ func (o *ReconcileSCCOptions) ReplaceChangedSCCs(newSCCs, changedSCCs []*securit
 // it does this by making the expected SCC mirror the actual SCC for items that
 // we are not reconciling and performing a diff (ignoring changes to metadata).
 // If a diff is produced then the expected SCC is submitted as needing an update.
-func (o *ReconcileSCCOptions) computeUpdatedSCC(expected securityv1.SecurityContextConstraints, actual securityv1.SecurityContextConstraints) (*securityv1.SecurityContextConstraints, bool) {
+func (o *ReconcileSCCOptions) computeUpdatedSCC(expected securityapi.SecurityContextConstraints, actual securityapi.SecurityContextConstraints) (*securityapi.SecurityContextConstraints, bool) {
 	needsUpdate := false
 
 	// if unioning old and new groups/users then make the expected contain all
@@ -296,7 +279,7 @@ func (o *ReconcileSCCOptions) computeUpdatedSCC(expected securityv1.SecurityCont
 }
 
 // sortVolumes sorts the volume slice of the SCC in place.
-func sortVolumes(scc *securityv1.SecurityContextConstraints) {
+func sortVolumes(scc *securityapi.SecurityContextConstraints) {
 	if scc.Volumes == nil || len(scc.Volumes) == 0 {
 		return
 	}
@@ -306,10 +289,10 @@ func sortVolumes(scc *securityv1.SecurityContextConstraints) {
 }
 
 // sliceToFSType converts a string slice into FStypes.
-func sliceToFSType(s []string) []securityv1.FSType {
-	fsTypes := []securityv1.FSType{}
+func sliceToFSType(s []string) []securityapi.FSType {
+	fsTypes := []securityapi.FSType{}
 	for _, v := range s {
-		fsTypes = append(fsTypes, securityv1.FSType(v))
+		fsTypes = append(fsTypes, securityapi.FSType(v))
 	}
 	return fsTypes
 }

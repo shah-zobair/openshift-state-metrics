@@ -283,7 +283,7 @@ func TestAdmit(t *testing.T) {
 		if err = reqLimit.(admission.InitializationValidator).ValidateInitialization(); err != nil {
 			t.Fatalf("validation error: %v", err)
 		}
-		err = reqLimit.(admission.ValidationInterface).Validate(admission.NewAttributesRecord(
+		err = reqLimit.(admission.MutationInterface).Admit(admission.NewAttributesRecord(
 			&projectapi.ProjectRequest{},
 			nil,
 			project.Kind("ProjectRequest").WithVersion("version"),

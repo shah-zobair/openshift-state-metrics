@@ -22,32 +22,34 @@ import (
 	"os"
 
 	"github.com/spf13/pflag"
+
+	koptions "k8s.io/kube-state-metrics/pkg/options"
 )
 
 type Options struct {
-	Apiserver                            string
-	Kubeconfig                           string
-	Help                                 bool
-	Port                                 int
-	Host                                 string
-	TelemetryPort                        int
-	TelemetryHost                        string
-	Collectors                           CollectorSet
-	Namespaces                           NamespaceList
-	MetricBlacklist                      MetricSet
-	MetricWhitelist                      MetricSet
-	Version                              bool
-	DisablePodNonGenericResourceMetrics  bool
-	DisableNodeNonGenericResourceMetrics bool
+	Apiserver       string
+	Kubeconfig      string
+	Help            bool
+	Port            int
+	Host            string
+	TelemetryPort   int
+	TelemetryHost   string
+	Collectors      koptions.CollectorSet
+	Namespaces      koptions.NamespaceList
+	MetricBlacklist koptions.MetricSet
+	MetricWhitelist koptions.MetricSet
+	Version         bool
+
+	EnableGZIPEncoding bool
 
 	flags *pflag.FlagSet
 }
 
 func NewOptions() *Options {
 	return &Options{
-		Collectors:      CollectorSet{},
-		MetricWhitelist: MetricSet{},
-		MetricBlacklist: MetricSet{},
+		Collectors:      koptions.CollectorSet{},
+		MetricWhitelist: koptions.MetricSet{},
+		MetricBlacklist: koptions.MetricSet{},
 	}
 }
 
@@ -69,15 +71,15 @@ func (o *Options) AddFlags() {
 	o.flags.BoolVarP(&o.Help, "help", "h", false, "Print Help text")
 	o.flags.IntVar(&o.Port, "port", 80, `Port to expose metrics on.`)
 	o.flags.StringVar(&o.Host, "host", "0.0.0.0", `Host to expose metrics on.`)
-	o.flags.IntVar(&o.TelemetryPort, "telemetry-port", 81, `Port to expose kube-state-metrics self metrics on.`)
-	o.flags.StringVar(&o.TelemetryHost, "telemetry-host", "0.0.0.0", `Host to expose kube-state-metrics self metrics on.`)
+	o.flags.IntVar(&o.TelemetryPort, "telemetry-port", 81, `Port to expose openshift-state-metrics self metrics on.`)
+	o.flags.StringVar(&o.TelemetryHost, "telemetry-host", "0.0.0.0", `Host to expose openshift-state-metrics self metrics on.`)
 	o.flags.Var(&o.Collectors, "collectors", fmt.Sprintf("Comma-separated list of collectors to be enabled. Defaults to %q", &DefaultCollectors))
 	o.flags.Var(&o.Namespaces, "namespace", fmt.Sprintf("Comma-separated list of namespaces to be enabled. Defaults to %q", &DefaultNamespaces))
 	o.flags.Var(&o.MetricWhitelist, "metric-whitelist", "Comma-separated list of metrics to be exposed. The whitelist and blacklist are mutually exclusive.")
 	o.flags.Var(&o.MetricBlacklist, "metric-blacklist", "Comma-separated list of metrics not to be enabled. The whitelist and blacklist are mutually exclusive.")
-	o.flags.BoolVarP(&o.Version, "version", "", false, "kube-state-metrics build version information")
-	o.flags.BoolVarP(&o.DisablePodNonGenericResourceMetrics, "disable-pod-non-generic-resource-metrics", "", false, "Disable pod non generic resource request and limit metrics")
-	o.flags.BoolVarP(&o.DisableNodeNonGenericResourceMetrics, "disable-node-non-generic-resource-metrics", "", false, "Disable node non generic resource request and limit metrics")
+	o.flags.BoolVarP(&o.Version, "version", "", false, "openshift-state-metrics build version information")
+
+	o.flags.BoolVar(&o.EnableGZIPEncoding, "enable-gzip-encoding", false, "Gzip responses when requested by clients via 'Accept-Encoding: gzip' header.")
 }
 
 func (o *Options) Parse() error {

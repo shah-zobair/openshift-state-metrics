@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/golang/glog"
@@ -24,7 +25,7 @@ const (
 	// NoBuildLogsMessage reports that no build logs are available
 	NoBuildLogsMessage = "No logs are available."
 
-	// BuildWorkDirMount is the working directory within the build pod, mounted as a volume.
+	// WorkDir is the working directory within the build pod, mounted as a volume.
 	BuildWorkDirMount = "/tmp/build"
 
 	// BuilderServiceAccountName is the name of the account used to run build pods by default.
@@ -32,6 +33,12 @@ const (
 
 	// buildPodSuffix is the suffix used to append to a build pod name given a build name
 	buildPodSuffix = "build"
+)
+
+var (
+	// InputContentPath is the path at which the build inputs will be available
+	// to all the build containers.
+	InputContentPath = filepath.Join(BuildWorkDirMount, "inputs")
 )
 
 // GeneratorFatalError represents a fatal error while generating a build.

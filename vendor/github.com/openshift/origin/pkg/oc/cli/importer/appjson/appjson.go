@@ -29,9 +29,12 @@ import (
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/resource"
 	"k8s.io/kubernetes/pkg/kubectl/scheme"
 
+	templatev1 "github.com/openshift/api/template/v1"
 	"github.com/openshift/origin/pkg/oc/lib/newapp/appjson"
 	appcmd "github.com/openshift/origin/pkg/oc/lib/newapp/cmd"
 	"github.com/openshift/origin/pkg/oc/util/ocscheme"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	templateapiv1 "github.com/openshift/origin/pkg/template/apis/template/v1"
 	templatev1client "github.com/openshift/origin/pkg/template/client/v1"
 )
 
@@ -230,27 +233,38 @@ func (o *AppJSONOptions) Run() error {
 		return err
 	}
 
-	template.ObjectLabels = map[string]string{"app.json": template.Name}
+	externalTemplate := &templatev1.Template{}
+	if err := templateapiv1.Convert_template_Template_To_v1_Template(template, externalTemplate, nil); err != nil {
+		return err
+	}
+
+	externalTemplate.ObjectLabels = map[string]string{"app.json": externalTemplate.Name}
 
 	// TODO: stop implying --dry-run behavior when an --output value is provided
 	if o.PrintFlags.OutputFormat != nil && len(*o.PrintFlags.OutputFormat) > 0 || len(o.AsTemplate) > 0 {
 		var obj runtime.Object
 		if len(o.AsTemplate) > 0 {
-			template.Name = o.AsTemplate
-			obj = template
+			externalTemplate.Name = o.AsTemplate
+			obj = externalTemplate
 		} else {
-			obj = &corev1.List{Items: template.Objects}
+			obj = &corev1.List{Items: externalTemplate.Objects}
 		}
 		return o.Printer.PrintObj(obj, o.Out)
 	}
 
 	templateProcessor := templatev1client.NewTemplateProcessorClient(o.Client, o.Namespace)
-	result, err := appcmd.TransformTemplate(template, templateProcessor, o.Namespace, nil, false)
+	result, err := appcmd.TransformTemplate(externalTemplate, templateProcessor, o.Namespace, nil, false)
 	if err != nil {
 		return err
 	}
 
-	appcmd.DescribeGeneratedTemplate(o.Out, "", result, o.Namespace)
+	// TODO(juanvallejo): remove once we have external version describers
+	describableResult := &templateapi.Template{}
+	if err := templateapiv1.Convert_v1_Template_To_template_Template(result, describableResult, nil); err != nil {
+		return err
+	}
+
+	appcmd.DescribeGeneratedTemplate(o.Out, "", describableResult, o.Namespace)
 
 	objs := &corev1.List{Items: result.Objects}
 

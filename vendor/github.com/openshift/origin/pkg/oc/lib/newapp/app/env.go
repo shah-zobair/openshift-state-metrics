@@ -9,9 +9,8 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 )
 
 // Environment holds environment variables for new-app
@@ -92,10 +91,10 @@ func (e Environment) AddIfNotPresent(more Environment) []string {
 }
 
 // List sorts and returns all the environment variables
-func (e Environment) List() []corev1.EnvVar {
-	env := []corev1.EnvVar{}
+func (e Environment) List() []kapi.EnvVar {
+	env := []kapi.EnvVar{}
 	for k, v := range e {
-		env = append(env, corev1.EnvVar{
+		env = append(env, kapi.EnvVar{
 			Name:  k,
 			Value: v,
 		})
@@ -104,7 +103,7 @@ func (e Environment) List() []corev1.EnvVar {
 	return env
 }
 
-type sortedEnvVar []corev1.EnvVar
+type sortedEnvVar []kapi.EnvVar
 
 func (m sortedEnvVar) Len() int           { return len(m) }
 func (m sortedEnvVar) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
@@ -112,7 +111,7 @@ func (m sortedEnvVar) Less(i, j int) bool { return m[i].Name < m[j].Name }
 
 // JoinEnvironment joins two different sets of environment variables
 // into one, leaving out all the duplicates
-func JoinEnvironment(a, b []corev1.EnvVar) (out []corev1.EnvVar) {
+func JoinEnvironment(a, b []kapi.EnvVar) (out []kapi.EnvVar) {
 	out = a
 	for i := range b {
 		exists := false

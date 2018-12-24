@@ -73,9 +73,6 @@ type podNodeConstraints struct {
 	nodeIdentifier         nodeidentifier.NodeIdentifier
 }
 
-var _ = initializer.WantsAuthorizer(&podNodeConstraints{})
-var _ = admission.ValidationInterface(&podNodeConstraints{})
-
 func shouldCheckResource(resource schema.GroupResource, kind schema.GroupKind) (bool, error) {
 	expectedKind, shouldCheck := resourcesToCheck[resource]
 	if !shouldCheck {
@@ -116,6 +113,8 @@ var resourcesToCheck = map[schema.GroupResource]schema.GroupKind{
 	security.Resource("podsecuritypolicyreviews"):            security.Kind("PodSecurityPolicyReview"),
 }
 
+var _ = initializer.WantsAuthorizer(&podNodeConstraints{})
+
 func readConfig(reader io.Reader) (*podnodeconstraints.PodNodeConstraintsConfig, error) {
 	if reader == nil || reflect.ValueOf(reader).IsNil() {
 		return nil, nil
@@ -135,7 +134,7 @@ func readConfig(reader io.Reader) (*podnodeconstraints.PodNodeConstraintsConfig,
 	return config, nil
 }
 
-func (o *podNodeConstraints) Validate(attr admission.Attributes) error {
+func (o *podNodeConstraints) Admit(attr admission.Attributes) error {
 	switch {
 	case o.config == nil,
 		attr.GetSubresource() != "":
@@ -153,11 +152,10 @@ func (o *podNodeConstraints) Validate(attr admission.Attributes) error {
 		return nil
 	}
 	ps, err := o.getPodSpec(attr)
-	if err != nil {
-		return err
+	if err == nil {
+		return o.admitPodSpec(attr, ps)
 	}
-
-	return o.validatePodSpec(attr, ps)
+	return err
 }
 
 // extract the PodSpec from the pod templates for each object we care about
@@ -170,7 +168,7 @@ func (o *podNodeConstraints) getPodSpec(attr admission.Attributes) (kapi.PodSpec
 }
 
 // validate PodSpec if NodeName or NodeSelector are specified
-func (o *podNodeConstraints) validatePodSpec(attr admission.Attributes, ps kapi.PodSpec) error {
+func (o *podNodeConstraints) admitPodSpec(attr admission.Attributes, ps kapi.PodSpec) error {
 	// a node creating a mirror pod that targets itself is allowed
 	// see the NodeRestriction plugin for further details
 	if o.isNodeSelfTargetWithMirrorPod(attr, ps.NodeName) {

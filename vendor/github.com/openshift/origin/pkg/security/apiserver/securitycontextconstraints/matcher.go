@@ -2,13 +2,13 @@ package securitycontextconstraints
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -23,7 +23,7 @@ import (
 )
 
 type SCCMatcher interface {
-	FindApplicableSCCs(namespace string, user ...user.Info) ([]*securityapi.SecurityContextConstraints, error)
+	FindApplicableSCCs(user user.Info, namespace string) ([]*securityapi.SecurityContextConstraints, error)
 }
 
 type defaultSCCMatcher struct {
@@ -36,40 +36,28 @@ func NewDefaultSCCMatcher(c securitylisters.SecurityContextConstraintsLister, au
 }
 
 // FindApplicableSCCs implements SCCMatcher interface
-// It finds all SCCs that the subjects in the `users` argument may use.
-// The returned SCCs are sorted by priority.
-func (d *defaultSCCMatcher) FindApplicableSCCs(namespace string, users ...user.Info) ([]*securityapi.SecurityContextConstraints, error) {
+func (d *defaultSCCMatcher) FindApplicableSCCs(userInfo user.Info, namespace string) ([]*securityapi.SecurityContextConstraints, error) {
 	var matchedConstraints []*securityapi.SecurityContextConstraints
 	constraints, err := d.cache.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
-
-	// filter out SCCs if we got some users, leave as is if not
-	if len(users) == 0 {
-		matchedConstraints = constraints
-	} else {
-		for _, constraint := range constraints {
-			for _, user := range users {
-				if ConstraintAppliesTo(constraint.Name, constraint.Users, constraint.Groups, user, namespace, d.authorizer) {
-					matchedConstraints = append(matchedConstraints, constraint)
-					break
-				}
-			}
+	for _, constraint := range constraints {
+		if constraintAppliesTo(constraint, userInfo, namespace, d.authorizer) {
+			matchedConstraints = append(matchedConstraints, constraint)
 		}
 	}
-	sort.Sort(ByPriority(matchedConstraints))
 	return matchedConstraints, nil
 }
 
 // authorizedForSCC returns true if info is authorized to perform the "use" verb on the SCC resource.
-func authorizedForSCC(sccName string, info user.Info, namespace string, a authorizer.Authorizer) bool {
+func authorizedForSCC(constraint *securityapi.SecurityContextConstraints, info user.Info, namespace string, a authorizer.Authorizer) bool {
 	// check against the namespace that the pod is being created in to allow per-namespace SCC grants.
 	attr := authorizer.AttributesRecord{
 		User:            info,
 		Verb:            "use",
 		Namespace:       namespace,
-		Name:            sccName,
+		Name:            constraint.Name,
 		APIGroup:        security.GroupName,
 		Resource:        "securitycontextconstraints",
 		ResourceRequest: true,
@@ -82,22 +70,22 @@ func authorizedForSCC(sccName string, info user.Info, namespace string, a author
 	return decision == authorizer.DecisionAllow
 }
 
-// ConstraintAppliesTo inspects the constraint's users and groups against the userInfo to determine
+// constraintAppliesTo inspects the constraint's users and groups against the userInfo to determine
 // if it is usable by the userInfo.
 // Anything we do here needs to work with a deny authorizer so the choices are limited to SAR / Authorizer
-func ConstraintAppliesTo(sccName string, sccUsers, sccGroups []string, userInfo user.Info, namespace string, a authorizer.Authorizer) bool {
-	for _, user := range sccUsers {
+func constraintAppliesTo(constraint *securityapi.SecurityContextConstraints, userInfo user.Info, namespace string, a authorizer.Authorizer) bool {
+	for _, user := range constraint.Users {
 		if userInfo.GetName() == user {
 			return true
 		}
 	}
 	for _, userGroup := range userInfo.GetGroups() {
-		if constraintSupportsGroup(userGroup, sccGroups) {
+		if constraintSupportsGroup(userGroup, constraint.Groups) {
 			return true
 		}
 	}
 	if a != nil {
-		return authorizedForSCC(sccName, userInfo, namespace, a)
+		return authorizedForSCC(constraint, userInfo, namespace, a)
 	}
 	return false
 }
@@ -152,6 +140,20 @@ func constraintSupportsGroup(group string, constraintGroups []string) bool {
 		}
 	}
 	return false
+}
+
+// DeduplicateSecurityContextConstraints ensures we have a unique slice of constraints.
+func DeduplicateSecurityContextConstraints(sccs []*securityapi.SecurityContextConstraints) []*securityapi.SecurityContextConstraints {
+	deDuped := []*securityapi.SecurityContextConstraints{}
+	added := sets.NewString()
+
+	for _, s := range sccs {
+		if !added.Has(s.Name) {
+			deDuped = append(deDuped, s)
+			added.Insert(s.Name)
+		}
+	}
+	return deDuped
 }
 
 // getNamespaceByName retrieves a namespace only if ns is nil.

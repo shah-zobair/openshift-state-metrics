@@ -74,10 +74,9 @@ type projectRequestLimit struct {
 // ensure that the required Openshift admission interfaces are implemented
 var _ = oadmission.WantsProjectCache(&projectRequestLimit{})
 var _ = oadmission.WantsRESTClientConfig(&projectRequestLimit{})
-var _ = admission.ValidationInterface(&projectRequestLimit{})
 
 // Admit ensures that only a configured number of projects can be requested by a particular user.
-func (o *projectRequestLimit) Validate(a admission.Attributes) (err error) {
+func (o *projectRequestLimit) Admit(a admission.Attributes) (err error) {
 	if o.config == nil {
 		return nil
 	}

@@ -3,6 +3,8 @@ package scmauth
 import (
 	"io/ioutil"
 	"path/filepath"
+
+	"github.com/golang/glog"
 )
 
 const SSHPrivateKeyMethodName = "ssh-privatekey"

@@ -1,9 +1,9 @@
 package ipfailover
 
 import (
-	"k8s.io/apimachinery/pkg/runtime"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 )
 
 type IPFailoverConfiguratorPlugin interface {
-	Generate() ([]runtime.Object, error)
+	Generate() (*kapi.List, error)
 }

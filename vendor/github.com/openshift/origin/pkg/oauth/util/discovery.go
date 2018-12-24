@@ -6,10 +6,9 @@ import (
 	"io/ioutil"
 	"net/url"
 
-	"github.com/RangelReale/osin"
 	"github.com/golang/glog"
 
-	osinv1 "github.com/openshift/api/osin/v1"
+	"github.com/RangelReale/osin"
 	"github.com/openshift/origin/pkg/authorization/authorizer/scope"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	"github.com/openshift/origin/pkg/oauth/apis/oauth/validation"
@@ -103,24 +102,7 @@ func LoadOAuthMetadataFile(metadataFile string) ([]byte, *OauthAuthorizationServ
 	return data, oauthMetadata, nil
 }
 
-func PrepOauthMetadata(oauthConfig *osinv1.OAuthConfig, oauthMetadataFile string) ([]byte, *OauthAuthorizationServerMetadata, error) {
-	if oauthConfig != nil {
-		metadataStruct := getOauthMetadata(oauthConfig.MasterPublicURL)
-		metadata, err := json.MarshalIndent(metadataStruct, "", "  ")
-		if err != nil {
-			glog.Errorf("Unable to initialize OAuth authorization server metadata route: %v", err)
-			return nil, nil, err
-		}
-		return metadata, &metadataStruct, nil
-	}
-	if len(oauthMetadataFile) > 0 {
-		return LoadOAuthMetadataFile(oauthMetadataFile)
-	}
-	return nil, nil, nil
-}
-
-// Deprecated
-func DeprecatedPrepOauthMetadata(oauthConfig *configapi.OAuthConfig, oauthMetadataFile string) ([]byte, *OauthAuthorizationServerMetadata, error) {
+func PrepOauthMetadata(oauthConfig *configapi.OAuthConfig, oauthMetadataFile string) ([]byte, *OauthAuthorizationServerMetadata, error) {
 	if oauthConfig != nil {
 		metadataStruct := getOauthMetadata(oauthConfig.MasterPublicURL)
 		metadata, err := json.MarshalIndent(metadataStruct, "", "  ")

@@ -3,6 +3,7 @@ package podsecuritypolicyreview
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/golang/glog"
 
@@ -73,11 +74,13 @@ func (r *REST) Create(ctx context.Context, obj runtime.Object, _ rest.ValidateOb
 	newStatus := securityapi.PodSecurityPolicyReviewStatus{}
 	for _, sa := range serviceAccounts {
 		userInfo := serviceaccount.UserInfo(ns, sa.Name, "")
-		saConstraints, err := r.sccMatcher.FindApplicableSCCs(ns, userInfo)
+		saConstraints, err := r.sccMatcher.FindApplicableSCCs(userInfo, ns)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("unable to find SecurityContextConstraints for ServiceAccount %s: %v", sa.Name, err))
 			continue
 		}
+		scc.DeduplicateSecurityContextConstraints(saConstraints)
+		sort.Sort(scc.ByPriority(saConstraints))
 		var namespace *kapi.Namespace
 		for _, constraint := range saConstraints {
 			var (

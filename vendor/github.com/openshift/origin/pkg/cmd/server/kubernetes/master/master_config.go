@@ -59,7 +59,6 @@ import (
 	"github.com/openshift/origin/pkg/cmd/openshift-apiserver/openshiftapiserver/configprocessing"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	"github.com/openshift/origin/pkg/cmd/server/election"
-	"github.com/openshift/origin/pkg/cmd/server/origin/legacyconfigprocessing"
 	cmdflags "github.com/openshift/origin/pkg/cmd/util/flags"
 	oauthutil "github.com/openshift/origin/pkg/oauth/util"
 )
@@ -86,7 +85,7 @@ func BuildKubeAPIserverOptions(masterConfig configapi.MasterConfig) (*kapiserver
 	server.ServiceNodePortRange = *portRange
 	server.Features.EnableProfiling = true
 
-	server.SecureServing, err = legacyconfigprocessing.ToServingOptions(masterConfig.ServingInfo)
+	server.SecureServing, err = configprocessing.ToServingOptions(masterConfig.ServingInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +108,7 @@ func BuildKubeAPIserverOptions(masterConfig configapi.MasterConfig) (*kapiserver
 		}
 	}
 
-	server.Etcd, err = legacyconfigprocessing.GetEtcdOptions(masterConfig.KubernetesMasterConfig.APIServerArguments, masterConfig.EtcdClientInfo, masterConfig.EtcdStorageConfig.KubernetesStoragePrefix, nil)
+	server.Etcd, err = configprocessing.GetEtcdOptions(masterConfig.KubernetesMasterConfig.APIServerArguments, masterConfig.EtcdClientInfo, masterConfig.EtcdStorageConfig.KubernetesStoragePrefix, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +378,7 @@ func (rc *incompleteKubeMasterConfig) Complete(
 		return nil, err
 	}
 
-	_, oauthMetadata, _ := oauthutil.DeprecatedPrepOauthMetadata(masterConfig.OAuthConfig, masterConfig.AuthConfig.OAuthMetadataFile)
+	_, oauthMetadata, _ := oauthutil.PrepOauthMetadata(masterConfig.OAuthConfig, masterConfig.AuthConfig.OAuthMetadataFile)
 
 	// override config values
 	kubeVersion := kversion.Get()
@@ -431,7 +430,7 @@ func (rc *incompleteKubeMasterConfig) Complete(
 
 	// we don't use legacy audit anymore
 	genericConfig.LegacyAuditWriter = nil
-	backend, policyChecker, err := legacyconfigprocessing.GetAuditConfig(masterConfig.AuditConfig)
+	backend, policyChecker, err := configprocessing.GetAuditConfig(masterConfig.AuditConfig)
 	if err != nil {
 		return nil, err
 	}

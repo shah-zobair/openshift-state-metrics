@@ -1,25 +1,18 @@
 package kubeapiserver
 
 import (
-	"io/ioutil"
 	"os"
 	"path"
 
 	"github.com/docker/docker/api/types"
 	"github.com/golang/glog"
+	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config/v1"
+	"github.com/openshift/origin/pkg/oc/clusteradd/componentinstall"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-
-	configv1 "github.com/openshift/api/config/v1"
-	kubecontrolplanev1 "github.com/openshift/api/kubecontrolplane/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
-	"github.com/openshift/origin/pkg/configconversion"
-	"github.com/openshift/origin/pkg/oc/clusterup/componentinstall"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/dockerhelper"
 	"github.com/openshift/origin/pkg/oc/clusterup/docker/run"
 	"github.com/openshift/origin/pkg/oc/lib/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const KubeAPIServerDirName = "kube-apiserver"
@@ -83,28 +76,31 @@ func (opt KubeAPIServerStartConfig) MakeMasterConfig(dockerClient dockerhelper.I
 	}
 
 	// update some listen information to include starting the DNS server
-	legacyMasterConfigFilename := path.Join(masterDir, "master-config.yaml")
-	masterconfig, err := componentinstall.ReadMasterConfig(legacyMasterConfigFilename)
+	masterconfigFilename := path.Join(masterDir, "master-config.yaml")
+	masterconfig, err := componentinstall.ReadMasterConfig(masterconfigFilename)
 	if err != nil {
 		return "", err
 	}
 
-	kubeAPIServerConfig, err := configconversion.ConvertMasterConfigToKubeAPIServerConfig(masterconfig)
-	if err != nil {
-		return "", err
-	}
-	scheme := runtime.NewScheme()
-	utilruntime.Must(kubecontrolplanev1.Install(scheme))
-	codecs := serializer.NewCodecFactory(scheme)
-	configContent, err := runtime.Encode(codecs.LegacyCodec(kubecontrolplanev1.GroupVersion, configv1.GroupVersion, osinv1.GroupVersion), kubeAPIServerConfig)
-	if err != nil {
-		return "", err
-	}
+	addImagePolicyAdmission(&masterconfig.AdmissionConfig)
 
-	masterConfigFilename := path.Join(masterDir, "config.json")
-	if err := ioutil.WriteFile(masterConfigFilename, configContent, 0644); err != nil {
+	if err := componentinstall.WriteMasterConfig(masterconfigFilename, masterconfig); err != nil {
 		return "", err
 	}
 
 	return masterDir, nil
+}
+
+func addImagePolicyAdmission(admissionConfig *configapi.AdmissionConfig) {
+	// default openshift image policy admission
+	if admissionConfig.PluginConfig == nil {
+		admissionConfig.PluginConfig = map[string]*configapi.AdmissionPluginConfig{}
+	}
+	// Add default ImagePolicyConfig into openshift api master config
+	policyConfig := []byte(`{"kind":"ImagePolicyConfig","apiVersion":"v1","executionRules":[{"name":"execution-denied",
+"onResources":[{"resource":"pods"},{"resource":"builds"}],"reject":true,"matchImageAnnotations":[{"key":"images.openshift.io/deny-execution",
+"value":"true"}],"skipOnResolutionFailure":true}]}`)
+	admissionConfig.PluginConfig["openshift.io/ImagePolicy"] = &configapi.AdmissionPluginConfig{
+		Configuration: runtime.RawExtension{Raw: policyConfig},
+	}
 }

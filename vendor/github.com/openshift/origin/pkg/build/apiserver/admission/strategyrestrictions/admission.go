@@ -42,7 +42,6 @@ type buildByStrategy struct {
 
 var _ = initializer.WantsExternalKubeClientSet(&buildByStrategy{})
 var _ = oadmission.WantsRESTClientConfig(&buildByStrategy{})
-var _ = admission.ValidationInterface(&buildByStrategy{})
 
 // NewBuildByStrategy returns an admission control for builds that checks
 // on policy based on the build strategy type
@@ -52,7 +51,7 @@ func NewBuildByStrategy() admission.Interface {
 	}
 }
 
-func (a *buildByStrategy) Validate(attr admission.Attributes) error {
+func (a *buildByStrategy) Admit(attr admission.Attributes) error {
 	gr := attr.GetResource().GroupResource()
 	switch gr {
 	case build.Resource("buildconfigs"),

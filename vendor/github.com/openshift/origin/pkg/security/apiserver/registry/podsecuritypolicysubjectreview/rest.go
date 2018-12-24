@@ -3,6 +3,7 @@ package podsecuritypolicysubjectreview
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/golang/glog"
 
@@ -63,18 +64,22 @@ func (r *REST) Create(ctx context.Context, obj runtime.Object, _ rest.ValidateOb
 	}
 
 	userInfo := &user.DefaultInfo{Name: pspsr.Spec.User, Groups: pspsr.Spec.Groups}
-
-	users := []user.Info{userInfo}
-	saName := pspsr.Spec.Template.Spec.ServiceAccountName
-	if len(saName) > 0 {
-		users = append(users, serviceaccount.UserInfo(ns, saName, ""))
-	}
-
-	matchedConstraints, err := r.sccMatcher.FindApplicableSCCs(ns, users...)
+	matchedConstraints, err := r.sccMatcher.FindApplicableSCCs(userInfo, ns)
 	if err != nil {
 		return nil, kapierrors.NewBadRequest(fmt.Sprintf("unable to find SecurityContextConstraints: %v", err))
 	}
 
+	saName := pspsr.Spec.Template.Spec.ServiceAccountName
+	if len(saName) > 0 {
+		saUserInfo := serviceaccount.UserInfo(ns, saName, "")
+		saConstraints, err := r.sccMatcher.FindApplicableSCCs(saUserInfo, ns)
+		if err != nil {
+			return nil, kapierrors.NewBadRequest(fmt.Sprintf("unable to find SecurityContextConstraints: %v", err))
+		}
+		matchedConstraints = append(matchedConstraints, saConstraints...)
+	}
+	scc.DeduplicateSecurityContextConstraints(matchedConstraints)
+	sort.Sort(scc.ByPriority(matchedConstraints))
 	var namespace *kapi.Namespace
 	for _, constraint := range matchedConstraints {
 		var (

@@ -6,8 +6,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/opencontainers/go-digest"
-
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/manifest/schema2"
@@ -99,9 +97,7 @@ type MirrorImageOptions struct {
 
 func NewMirrorImageOptions(streams genericclioptions.IOStreams) *MirrorImageOptions {
 	return &MirrorImageOptions{
-		IOStreams:      streams,
-		MaxRegistry:    4,
-		MaxPerRegistry: 6,
+		IOStreams: streams,
 	}
 }
 
@@ -128,8 +124,8 @@ func NewCmdMirrorImage(name string, streams genericclioptions.IOStreams) *cobra.
 	flag.BoolVar(&o.SkipMount, "skip-mount", o.SkipMount, "Always push layers instead of cross-mounting them")
 	flag.BoolVar(&o.SkipMultipleScopes, "skip-multiple-scopes", o.SkipMultipleScopes, "Some registries do not support multiple scopes passed to the registry login.")
 	flag.BoolVar(&o.Force, "force", o.Force, "Attempt to write all layers and manifests even if they exist in the remote repository.")
-	flag.IntVar(&o.MaxRegistry, "max-registry", o.MaxRegistry, "Number of concurrent registries to connect to at any one time.")
-	flag.IntVar(&o.MaxPerRegistry, "max-per-registry", o.MaxPerRegistry, "Number of concurrent requests allowed per registry.")
+	flag.IntVar(&o.MaxRegistry, "max-registry", 4, "Number of concurrent registries to connect to at any one time.")
+	flag.IntVar(&o.MaxPerRegistry, "max-per-registry", 6, "Number of concurrent requests allowed per registry.")
 	flag.StringSliceVar(&o.AttemptS3BucketCopy, "s3-source-bucket", o.AttemptS3BucketCopy, "A list of bucket/path locations on S3 that may contain already uploaded blobs. Add [store] to the end to use the Docker registry path convention.")
 	flag.StringSliceVarP(&o.Filenames, "filename", "f", o.Filenames, "One or more files to read SRC=DST or SRC DST [DST ...] mappings from.")
 
@@ -242,7 +238,8 @@ func (o *MirrorImageOptions) Run() error {
 								blob := op.parent.parent.parent.GetBlob(digest)
 								w.Parallel(func() {
 									if err := copyBlob(ctx, work, op, blob, o.Force, o.SkipMount, o.ErrOut); err != nil {
-										phase.ExecutionFailure(err)
+										fmt.Fprintf(o.ErrOut, "error: %v\n", err)
+										phase.Failed()
 										return
 									}
 									op.parent.parent.AssociateBlob(digest, unit.repository.name)
@@ -255,39 +252,16 @@ func (o *MirrorImageOptions) Run() error {
 					}
 					// upload manifests
 					op := unit.repository.manifests
-					registryWorkers[unit.registry.name].Batch(func(w workqueue.Work) {
-						ref, err := reference.WithName(op.toRef.RepositoryName())
-						if err != nil {
-							phase.ExecutionFailure(fmt.Errorf("unable to create reference to repository %s: %v", op.toRef, err))
-							return
+					if errs := copyManifests(ctx, op, o.Out); len(errs) > 0 {
+						for _, err := range errs {
+							fmt.Fprintf(o.ErrOut, "error: %v\n", err)
 						}
-						// upload and tag the manifest
-						for digest := range op.digestsToTags {
-							srcDigest := digest
-							tags := op.digestsToTags[srcDigest].List()
-							w.Parallel(func() {
-								if errs := copyManifestToTags(ctx, ref, srcDigest, tags, op, o.Out); len(errs) > 0 {
-									phase.ExecutionFailure(errs...)
-								}
-							})
-						}
-						// this is a pure manifest move, put the manifest by its id
-						for digest := range op.digestCopies {
-							srcDigest := godigest.Digest(digest)
-							w.Parallel(func() {
-								if err := copyManifest(ctx, ref, srcDigest, op, o.Out); err != nil {
-									phase.ExecutionFailure(err)
-								}
-							})
-						}
-					})
+						phase.Failed()
+					}
 				})
 			}
 		})
 		if phase.IsFailed() {
-			for _, err := range phase.ExecutionFailures() {
-				fmt.Fprintf(o.ErrOut, "error: %v\n", err)
-			}
 			return fmt.Errorf("one or more errors occurred while uploading images")
 		}
 	}
@@ -405,8 +379,7 @@ func (o *MirrorImageOptions) plan() (*plan, error) {
 
 							canonicalTo := toRepo.Named()
 
-							registryPlan := plan.RegistryPlan(dst.ref.Registry)
-							repoPlan := registryPlan.RepositoryPlan(canonicalTo.String())
+							repoPlan := plan.RegistryPlan(dst.ref.Registry).RepositoryPlan(canonicalTo.String())
 							blobPlan := repoPlan.Blobs(src.ref, dst.t, location)
 
 							toManifests, err := toRepo.Manifests(ctx)
@@ -448,7 +421,6 @@ func (o *MirrorImageOptions) plan() (*plan, error) {
 										continue
 									}
 									for _, blob := range srcManifest.References() {
-										registryPlan.AssociateBlob(blob.Digest, canonicalFrom.String())
 										blobPlan.Copy(blob, srcBlobs, toBlobs)
 									}
 								}
@@ -586,21 +558,49 @@ func copyBlob(ctx context.Context, plan *workPlan, c *repositoryBlobCopy, blob d
 	return nil
 }
 
-func copyManifestToTags(
+func copyManifests(
 	ctx context.Context,
-	ref reference.Named,
-	srcDigest digest.Digest,
-	tags []string,
 	plan *repositoryManifestPlan,
 	out io.Writer,
 ) []error {
+
 	var errs []error
-	srcManifest, ok := plan.parent.parent.parent.GetManifest(srcDigest)
-	if !ok {
-		panic(fmt.Sprintf("empty source manifest for %s", srcDigest))
+	ref, err := reference.WithName(plan.toRef.RepositoryName())
+	if err != nil {
+		return []error{fmt.Errorf("unable to create reference to repository %s: %v", plan.toRef, err)}
 	}
-	for _, tag := range tags {
-		toDigest, err := imagemanifest.PutManifestInCompatibleSchema(ctx, srcManifest, tag, plan.to, plan.toBlobs, ref)
+
+	// upload and tag the manifest
+	for srcDigest, tags := range plan.digestsToTags {
+		srcManifest, ok := plan.parent.parent.parent.GetManifest(srcDigest)
+		if !ok {
+			panic(fmt.Sprintf("empty source manifest for %s", srcDigest))
+		}
+		for _, tag := range tags.List() {
+			toDigest, err := imagemanifest.PutManifestInCompatibleSchema(ctx, srcManifest, tag, plan.to, plan.toBlobs, ref)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("unable to push manifest to %s: %v", plan.toRef, err))
+				continue
+			}
+			for _, desc := range srcManifest.References() {
+				plan.parent.parent.AssociateBlob(desc.Digest, plan.parent.name)
+			}
+			switch plan.destinationType {
+			case DestinationS3:
+				fmt.Fprintf(out, "%s s3://%s:%s\n", toDigest, plan.toRef, tag)
+			default:
+				fmt.Fprintf(out, "%s %s:%s\n", toDigest, plan.toRef, tag)
+			}
+		}
+	}
+	// this is a pure manifest move, put the manifest by its id
+	for digest := range plan.digestCopies {
+		srcDigest := godigest.Digest(digest)
+		srcManifest, ok := plan.parent.parent.parent.GetManifest(srcDigest)
+		if !ok {
+			panic(fmt.Sprintf("empty source manifest for %s", srcDigest))
+		}
+		toDigest, err := imagemanifest.PutManifestInCompatibleSchema(ctx, srcManifest, "", plan.to, plan.toBlobs, ref)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("unable to push manifest to %s: %v", plan.toRef, err))
 			continue
@@ -610,39 +610,12 @@ func copyManifestToTags(
 		}
 		switch plan.destinationType {
 		case DestinationS3:
-			fmt.Fprintf(out, "%s s3://%s:%s\n", toDigest, plan.toRef, tag)
+			fmt.Fprintf(out, "%s s3://%s\n", toDigest, plan.toRef)
 		default:
-			fmt.Fprintf(out, "%s %s:%s\n", toDigest, plan.toRef, tag)
+			fmt.Fprintf(out, "%s %s\n", toDigest, plan.toRef)
 		}
 	}
 	return errs
-}
-
-func copyManifest(
-	ctx context.Context,
-	ref reference.Named,
-	srcDigest digest.Digest,
-	plan *repositoryManifestPlan,
-	out io.Writer,
-) error {
-	srcManifest, ok := plan.parent.parent.parent.GetManifest(srcDigest)
-	if !ok {
-		panic(fmt.Sprintf("empty source manifest for %s", srcDigest))
-	}
-	toDigest, err := imagemanifest.PutManifestInCompatibleSchema(ctx, srcManifest, "", plan.to, plan.toBlobs, ref)
-	if err != nil {
-		return fmt.Errorf("unable to push manifest to %s: %v", plan.toRef, err)
-	}
-	for _, desc := range srcManifest.References() {
-		plan.parent.parent.AssociateBlob(desc.Digest, plan.parent.name)
-	}
-	switch plan.destinationType {
-	case DestinationS3:
-		fmt.Fprintf(out, "%s s3://%s\n", toDigest, plan.toRef)
-	default:
-		fmt.Fprintf(out, "%s %s\n", toDigest, plan.toRef)
-	}
-	return nil
 }
 
 type optionFunc func(interface{}) error

@@ -1,14 +1,12 @@
 package kubeapiserver
 
 import (
-	"io/ioutil"
-	"os"
 	"path"
 
 	"github.com/golang/glog"
 
+	"github.com/openshift/origin/pkg/oc/clusteradd/componentinstall"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/tmpformac"
-	"github.com/openshift/origin/pkg/oc/clusterup/manifests"
 )
 
 func MakeOpenShiftControllerConfig(existingMasterConfig string, basedir string) (string, error) {
@@ -17,15 +15,22 @@ func MakeOpenShiftControllerConfig(existingMasterConfig string, basedir string) 
 	if err := tmpformac.CopyDirectory(existingMasterConfig, configDir); err != nil {
 		return "", err
 	}
-	if err := os.Remove(path.Join(configDir, "master-config.yaml")); err != nil {
+
+	// update some listen information to include starting the DNS server
+	masterconfigFilename := path.Join(configDir, "master-config.yaml")
+	masterconfig, err := componentinstall.ReadMasterConfig(masterconfigFilename)
+	if err != nil {
 		return "", err
 	}
-	if err := os.Remove(path.Join(configDir, "config.json")); err != nil {
-		return "", err
+	masterconfig.ServingInfo.BindAddress = "0.0.0.0:8444"
+
+	// disable the service serving cert signer because that runs in a separate pod now
+	masterconfig.ControllerConfig.Controllers = []string{
+		"*",
+		"-openshift.io/service-serving-cert",
 	}
 
-	configFilename := path.Join(configDir, "config.json")
-	if err := ioutil.WriteFile(configFilename, manifests.MustAsset("install/openshift-controller-manager/static-config.json"), 0644); err != nil {
+	if err := componentinstall.WriteMasterConfig(masterconfigFilename, masterconfig); err != nil {
 		return "", err
 	}
 

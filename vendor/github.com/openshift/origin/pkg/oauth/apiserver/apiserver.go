@@ -14,6 +14,7 @@ import (
 	oauthapiv1 "github.com/openshift/api/oauth/v1"
 	oauthclient "github.com/openshift/client-go/oauth/clientset/versioned/typed/oauth/v1"
 	routeclient "github.com/openshift/client-go/route/clientset/versioned/typed/route/v1"
+	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	accesstokenetcd "github.com/openshift/origin/pkg/oauth/apiserver/registry/oauthaccesstoken/etcd"
 	authorizetokenetcd "github.com/openshift/origin/pkg/oauth/apiserver/registry/oauthauthorizetoken/etcd"
 	clientetcd "github.com/openshift/origin/pkg/oauth/apiserver/registry/oauthclient/etcd"
@@ -25,7 +26,7 @@ import (
 
 type ExtraConfig struct {
 	KubeAPIServerClientConfig *restclient.Config
-	ServiceAccountMethod      string
+	ServiceAccountMethod      configapi.GrantHandlerType
 
 	// TODO these should all become local eventually
 	Scheme *runtime.Scheme

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -25,8 +26,7 @@ import (
 	aggregatorclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
-	"github.com/openshift/origin/pkg/oc/clusterup/componentinstall"
-	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/components/pivot"
+	"github.com/openshift/origin/pkg/oc/clusteradd/componentinstall"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/kubeapiserver"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/kubelet"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/staticpods"
@@ -68,29 +68,10 @@ var (
 		},
 	}
 
-	runlevelZeroLabel         = map[string]string{"openshift.io/run-level": "0"}
 	runlevelOneLabel          = map[string]string{"openshift.io/run-level": "1"}
 	runLevelOneKubeComponents = []componentInstallTemplate{
 		{
-			ComponentImage: "hypershift",
-			Template: componentinstall.Template{
-				Name:            "etcd",
-				Namespace:       "kube-system",
-				NamespaceObj:    newNamespaceBytes("kube-system", runlevelZeroLabel),
-				InstallTemplate: manifests.MustAsset("install/etcd/install.yaml"),
-			},
-		},
-		{
-			ComponentImage: "cluster-kube-apiserver-operator",
-			Template: componentinstall.Template{
-				Name:            "openshift-kube-apiserver-operator",
-				Namespace:       "openshift-core-operators",
-				NamespaceObj:    newNamespaceBytes("openshift-core-operators", runlevelZeroLabel),
-				InstallTemplate: manifests.MustAsset("install/cluster-kube-apiserver-operator/install.yaml"),
-			},
-		},
-		{
-			ComponentImage: "node",
+			ComponentImage: "control-plane",
 			Template: componentinstall.Template{
 				Name:            "kube-proxy",
 				Namespace:       "kube-proxy",
@@ -99,7 +80,7 @@ var (
 			},
 		},
 		{
-			ComponentImage: "node",
+			ComponentImage: "control-plane",
 			Template: componentinstall.Template{
 				Name:            "kube-dns",
 				Namespace:       "kube-dns",
@@ -201,14 +182,12 @@ func (c *ClusterUpConfig) StartSelfHosted(out io.Writer) error {
 	if err := waitForHealthyKubeAPIServer(clientConfig); err != nil {
 		return err
 	}
-	glog.Info("kube-apiserver is ready.")
-	installContext, err := componentinstall.NewComponentInstallContext(c.cliImage(), c.imageFormat(), c.pullPolicy, c.BaseDir, c.ServerLogLevel)
-	if err != nil {
-		return err
-	}
 
-	glog.Info("Create initial config content...")
-	err = (&pivot.KubeAPIServerContent{InstallContext: installContext}).Install(c.GetDockerClient())
+	// bootstrap the service-ca operator with the legacy service-signer.crt and key.
+	err = createServiceCASigningSecret(clientConfig,
+		path.Join(c.BaseDir, "openshift-apiserver", "service-signer.crt"),
+		path.Join(c.BaseDir, "openshift-apiserver", "service-signer.key"),
+	)
 	if err != nil {
 		return err
 	}
@@ -224,6 +203,11 @@ func (c *ClusterUpConfig) StartSelfHosted(out io.Writer) error {
 		templateSubstitutionValues,
 		c.GetDockerClient(),
 	)
+	if err != nil {
+		return err
+	}
+
+	installContext, err := componentinstall.NewComponentInstallContext(c.cliImage(), c.imageFormat(), c.pullPolicy, c.BaseDir, c.ServerLogLevel)
 	if err != nil {
 		return err
 	}
@@ -468,7 +452,7 @@ func (c *ClusterUpConfig) makeKubeDNSConfig(nodeConfig string) (string, error) {
 }
 
 func (c *ClusterUpConfig) makeOpenShiftAPIServerConfig(masterConfigDir string) (string, error) {
-	return kubeapiserver.MakeOpenShiftAPIServerConfig(masterConfigDir, c.BaseDir)
+	return kubeapiserver.MakeOpenShiftAPIServerConfig(masterConfigDir, c.RoutingSuffix, c.BaseDir)
 }
 
 func (c *ClusterUpConfig) makeOpenShiftControllerConfig(masterConfigDir string) (string, error) {
@@ -520,7 +504,7 @@ func (c *ClusterUpConfig) startKubelet(out io.Writer, masterConfigDir, nodeConfi
 		var cfgPath string
 		cfgPath = filepath.Join(currentUser.HomeDir, ".docker", "config.json")
 		// First check if config file exist on the host before add it to the mounts.
-		if _, err := os.Stat(cfgPath); os.IsExist(err) {
+		if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
 			container.ContainerBinds = append(container.ContainerBinds, fmt.Sprintf("%s:/root/.docker/config.json", cfgPath))
 		}
 	}
@@ -528,7 +512,7 @@ func (c *ClusterUpConfig) startKubelet(out io.Writer, masterConfigDir, nodeConfi
 	// /sys/devices/virtual/net/vethXXX/brport/hairpin_mode, so make this rw, not ro.
 	container.ContainerBinds = append(container.ContainerBinds, "/sys/devices/virtual/net:/sys/devices/virtual/net:rw")
 
-	container.NodeImage = c.hyperkubeImage()
+	container.NodeImage = c.nodeImage()
 	container.HTTPProxy = c.HTTPProxy
 	container.HTTPSProxy = c.HTTPSProxy
 	container.NoProxy = c.NoProxy

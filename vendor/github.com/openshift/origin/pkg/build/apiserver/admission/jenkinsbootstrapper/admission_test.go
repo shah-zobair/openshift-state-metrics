@@ -139,7 +139,7 @@ func TestAdmission(t *testing.T) {
 		}
 		admission.SetInternalKubeClientSet(kubeClient)
 
-		err := admission.Validate(tc.attributes)
+		err := admission.Admit(tc.attributes)
 		switch {
 		case len(tc.expectedErr) == 0 && err == nil:
 		case len(tc.expectedErr) == 0 && err != nil:

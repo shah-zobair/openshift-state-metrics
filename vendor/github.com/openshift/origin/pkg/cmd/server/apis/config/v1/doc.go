@@ -1,7 +1,5 @@
-// +k8s:conversion-gen=github.com/openshift/origin/pkg/cmd/server/apis/config
-// +k8s:conversion-gen-external-types=github.com/openshift/api/legacyconfig/v1
 // +k8s:defaulter-gen=TypeMeta
-// +k8s:defaulter-gen-input=../../../../../../../../../github.com/openshift/api/legacyconfig/v1
+// +k8s:deepcopy-gen=package,register
 
 // Package v1 is the v1 version of the API.
 package v1

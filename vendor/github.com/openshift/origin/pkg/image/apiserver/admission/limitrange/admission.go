@@ -50,8 +50,6 @@ type imageLimitRangerPlugin struct {
 var _ limitranger.LimitRangerActions = &imageLimitRangerPlugin{}
 var _ kadmission.WantsInternalKubeInformerFactory = &imageLimitRangerPlugin{}
 var _ kadmission.WantsInternalKubeClientSet = &imageLimitRangerPlugin{}
-var _ admission.ValidationInterface = &imageLimitRangerPlugin{}
-var _ admission.MutationInterface = &imageLimitRangerPlugin{}
 
 // NewImageLimitRangerPlugin provides a new imageLimitRangerPlugin.
 func NewImageLimitRangerPlugin(config io.Reader) (admission.Interface, error) {

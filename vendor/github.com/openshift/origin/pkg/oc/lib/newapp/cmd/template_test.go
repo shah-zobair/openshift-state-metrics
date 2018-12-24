@@ -3,18 +3,17 @@ package cmd
 import (
 	"testing"
 
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	templatev1 "github.com/openshift/api/template/v1"
 )
 
 func TestTransformTemplate(t *testing.T) {
-	templatefoobar := &templatev1.Template{
+	templatefoobar := &templateapi.Template{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "foo_bar_template_name",
 			Namespace: "foo_bar_namespace",
 		},
-		Parameters: []templatev1.Parameter{
+		Parameters: []templateapi.Parameter{
 			{Name: "parameter_foo_bar_exist", Value: "value_foo_bar_exist_old"},
 			{Name: "parameter_foo_bar_2", Value: "value_foo_bar_2"}},
 	}
@@ -22,7 +21,7 @@ func TestTransformTemplate(t *testing.T) {
 	testParamMap := map[string]string{}
 	testParamMap["parameter_foo_bar_exist"] = "value_foo_bar_exist_new"
 
-	template, err := TransformTemplate(templatefoobar, fakeTemplateProcessor{}, "foo_bar_namespace", testParamMap, false)
+	template, err := TransformTemplateInternal(templatefoobar, fakeTemplateProcessor{}, "foo_bar_namespace", testParamMap, false)
 	if err != nil {
 		t.Errorf("unexpect err : %v", err)
 	}
@@ -44,6 +43,6 @@ func TestTransformTemplate(t *testing.T) {
 type fakeTemplateProcessor struct {
 }
 
-func (fakeTemplateProcessor) Process(in *templatev1.Template) (*templatev1.Template, error) {
+func (fakeTemplateProcessor) Process(in *templateapi.Template) (*templateapi.Template, error) {
 	return in, nil
 }

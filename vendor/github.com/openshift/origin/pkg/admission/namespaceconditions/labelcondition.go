@@ -37,9 +37,6 @@ type pluginHandlerWithNamespaceLabelConditions struct {
 	namespaceSelector labels.Selector
 }
 
-var _ admission.ValidationInterface = &pluginHandlerWithNamespaceLabelConditions{}
-var _ admission.MutationInterface = &pluginHandlerWithNamespaceLabelConditions{}
-
 func (p pluginHandlerWithNamespaceLabelConditions) Handles(operation admission.Operation) bool {
 	return p.admissionPlugin.Handles(operation)
 }

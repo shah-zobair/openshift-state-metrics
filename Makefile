@@ -15,18 +15,6 @@ MULTI_ARCH_IMG = $(IMAGE)-$(ARCH)
 
 gofmtcheck:
 	@go fmt $(PKGS) | grep ".*\.go"; if [ "$$?" = "0" ]; then exit 1; fi
-
-doccheck:
-	@echo "- Checking if documentation is up to date..."
-	@grep -hoE '(kube_[^ |]+)' Documentation/* --exclude=README.md| sort -u > documented_metrics
-	@sed -n 's/.*# TYPE \(kube_[^ ]\+\).*/\1/p' pkg/collectors/*_test.go | sort -u > tested_metrics
-	@diff -u0 tested_metrics documented_metrics || (echo "ERROR: Metrics with - are present in tests but missing in documentation, metrics with + are documented but not tested."; exit 1)
-	@echo OK
-	@rm -f tested_metrics documented_metrics
-	@echo "- Checking for orphan documentation files"
-	@cd Documentation; for doc in *.md; do if [ "$$doc" != "README.md" ] && ! grep -q "$$doc" *.md; then echo "ERROR: No link to documentation file $${doc} detected"; exit 1; fi; done
-	@echo OK
-
 build: clean
 	docker run --rm -v "$$PWD":/go/src/github.com/wanghaoran1988/openshift-state-metrics -w /go/src/github.com/wanghaoran1988/openshift-state-metrics -e GOOS=$(shell uname -s | tr A-Z a-z) -e GOARCH=$(ARCH) -e CGO_ENABLED=0 golang:${GO_VERSION} go build -ldflags "-s -w -X ${PKG}/version.Release=${TAG} -X ${PKG}/version.Commit=${Commit} -X ${PKG}/version.BuildDate=${BuildDate}" -o openshift-state-metrics
 

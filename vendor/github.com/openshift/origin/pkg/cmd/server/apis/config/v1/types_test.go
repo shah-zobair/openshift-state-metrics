@@ -18,7 +18,6 @@ import (
 
 	// install all APIs
 	_ "github.com/openshift/origin/pkg/api/install"
-	_ "github.com/openshift/origin/pkg/cmd/server/apis/config/install"
 	_ "k8s.io/kubernetes/pkg/apis/core/install"
 )
 

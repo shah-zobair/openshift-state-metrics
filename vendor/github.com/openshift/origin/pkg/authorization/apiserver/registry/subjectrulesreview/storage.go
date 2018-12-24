@@ -99,7 +99,7 @@ func GetEffectivePolicyRules(ctx context.Context, ruleResolver rbacregistryvalid
 	if scopes := user.GetExtra()[authorizationapi.ScopesKey]; len(scopes) > 0 {
 		rules, err = filterRulesByScopes(rules, scopes, namespace, clusterRoleGetter)
 		if err != nil {
-			errors = append(errors, err)
+			return nil, []error{kapierrors.NewInternalError(err)}
 		}
 	}
 
@@ -113,7 +113,9 @@ func GetEffectivePolicyRules(ctx context.Context, ruleResolver rbacregistryvalid
 
 func filterRulesByScopes(rules []rbacv1.PolicyRule, scopes []string, namespace string, clusterRoleGetter rbaclisters.ClusterRoleLister) ([]rbacv1.PolicyRule, error) {
 	scopeRules, err := scope.ScopesToRules(scopes, namespace, clusterRoleGetter)
-	// it's ok if there are errors, we'll just bubble them up
+	if err != nil {
+		return nil, err
+	}
 
 	filteredRules := []rbacv1.PolicyRule{}
 	for _, rule := range rules {
@@ -122,5 +124,5 @@ func filterRulesByScopes(rules []rbacv1.PolicyRule, scopes []string, namespace s
 		}
 	}
 
-	return filteredRules, err
+	return filteredRules, nil
 }

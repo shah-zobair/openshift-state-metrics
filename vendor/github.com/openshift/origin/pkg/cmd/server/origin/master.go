@@ -15,11 +15,10 @@ import (
 	kubeapiserver "k8s.io/kubernetes/pkg/master"
 	kcorestorage "k8s.io/kubernetes/pkg/registry/core/rest"
 
-	openshiftcontrolplanev1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	"github.com/openshift/origin/pkg/cmd/openshift-apiserver/openshiftapiserver"
 	"github.com/openshift/origin/pkg/cmd/openshift-apiserver/openshiftapiserver/configprocessing"
+	"github.com/openshift/origin/pkg/cmd/openshift-kube-apiserver/openshiftkubeapiserver"
 	kubernetes "github.com/openshift/origin/pkg/cmd/server/kubernetes/master"
-	"github.com/openshift/origin/pkg/cmd/server/origin/legacyconfigprocessing"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	sccstorage "github.com/openshift/origin/pkg/security/apiserver/registry/securitycontextconstraints/etcd"
 	kapiserveroptions "k8s.io/kubernetes/cmd/kube-apiserver/app/options"
@@ -34,7 +33,7 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 	// most of the config actually remains the same.  We only need to mess with a couple items
 	genericConfig := kubeAPIServerConfig
 	var err error
-	genericConfig.RESTOptionsGetter, err = legacyconfigprocessing.NewRESTOptionsGetter(c.Options.KubernetesMasterConfig.APIServerArguments, c.Options.EtcdClientInfo, c.Options.EtcdStorageConfig.OpenShiftStoragePrefix)
+	genericConfig.RESTOptionsGetter, err = openshiftapiserver.NewRESTOptionsGetter(c.Options.KubernetesMasterConfig.APIServerArguments, c.Options.EtcdClientInfo, c.Options.EtcdStorageConfig.OpenShiftStoragePrefix)
 	if err != nil {
 		return nil, err
 	}
@@ -49,19 +48,9 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 		}
 	}
 
-	routeAllocator, err := configprocessing.RouteAllocator(c.Options.RoutingConfig.Subdomain)
+	routeAllocator, err := configprocessing.RouteAllocator(c.Options.RoutingConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	allowedRegistriesForImport := openshiftcontrolplanev1.AllowedRegistries{}
-	if c.Options.ImagePolicyConfig.AllowedRegistriesForImport != nil {
-		for _, curr := range *c.Options.ImagePolicyConfig.AllowedRegistriesForImport {
-			allowedRegistriesForImport = append(allowedRegistriesForImport, openshiftcontrolplanev1.RegistryLocation{
-				Insecure:   curr.Insecure,
-				DomainName: curr.DomainName,
-			})
-		}
 	}
 
 	ret := &openshiftapiserver.OpenshiftAPIConfig{
@@ -77,7 +66,7 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 			SubjectLocator:                     c.SubjectLocator,
 			LimitVerifier:                      c.LimitVerifier,
 			RegistryHostnameRetriever:          c.RegistryHostnameRetriever,
-			AllowedRegistriesForImport:         allowedRegistriesForImport,
+			AllowedRegistriesForImport:         c.Options.ImagePolicyConfig.AllowedRegistriesForImport,
 			MaxImagesBulkImportedPerRepository: c.Options.ImagePolicyConfig.MaxImagesBulkImportedPerRepository,
 			AdditionalTrustedCA:                caData,
 			RouteAllocator:                     routeAllocator,
@@ -91,7 +80,7 @@ func (c *MasterConfig) newOpenshiftAPIConfig(kubeAPIServerConfig apiserver.Confi
 		},
 	}
 	if c.Options.OAuthConfig != nil {
-		ret.ExtraConfig.ServiceAccountMethod = string(c.Options.OAuthConfig.GrantConfig.ServiceAccountMethod)
+		ret.ExtraConfig.ServiceAccountMethod = c.Options.OAuthConfig.GrantConfig.ServiceAccountMethod
 	}
 
 	return ret, ret.ExtraConfig.Validate()
@@ -110,7 +99,7 @@ func (c *MasterConfig) withAPIExtensions(delegateAPIServer apiserver.DelegationT
 }
 
 func (c *MasterConfig) withNonAPIRoutes(delegateAPIServer apiserver.DelegationTarget, kubeAPIServerConfig apiserver.Config) (apiserver.DelegationTarget, error) {
-	openshiftNonAPIConfig, err := legacyconfigprocessing.NewOpenshiftNonAPIConfig(&kubeAPIServerConfig, c.ClientGoKubeInformers, c.Options.OAuthConfig, c.Options.AuthConfig)
+	openshiftNonAPIConfig, err := openshiftkubeapiserver.NewOpenshiftNonAPIConfig(&kubeAPIServerConfig, c.ClientGoKubeInformers, c.Options.OAuthConfig, c.Options.AuthConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +176,7 @@ func (c *MasterConfig) Run(stopCh <-chan struct{}) error {
 	var delegateAPIServer apiserver.DelegationTarget
 	var extraPostStartHooks map[string]apiserver.PostStartHookFunc
 
-	c.kubeAPIServerConfig.GenericConfig.BuildHandlerChainFunc, extraPostStartHooks, err = legacyconfigprocessing.BuildHandlerChain(
+	c.kubeAPIServerConfig.GenericConfig.BuildHandlerChainFunc, extraPostStartHooks, err = openshiftkubeapiserver.BuildHandlerChain(
 		c.kubeAPIServerConfig.GenericConfig, c.ClientGoKubeInformers,
 		c.Options.ControllerConfig.ServiceServingCert.Signer.CertFile, c.Options.OAuthConfig, c.Options.PolicyConfig.UserAgentMatchingConfig)
 	if err != nil {

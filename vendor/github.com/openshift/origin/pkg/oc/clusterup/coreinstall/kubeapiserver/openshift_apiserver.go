@@ -1,29 +1,40 @@
 package kubeapiserver
 
 import (
-	"io/ioutil"
-	"os"
 	"path"
 
 	"github.com/golang/glog"
-
+	"github.com/openshift/origin/pkg/oc/clusteradd/componentinstall"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/tmpformac"
-	"github.com/openshift/origin/pkg/oc/clusterup/manifests"
 )
 
-func MakeOpenShiftAPIServerConfig(existingMasterConfig string, basedir string) (string, error) {
+func MakeOpenShiftAPIServerConfig(existingMasterConfig string, routingSuffix, basedir string) (string, error) {
 	configDir := path.Join(basedir, OpenShiftAPIServerDirName)
 	glog.V(1).Infof("Copying kube-apiserver config to local directory %s", configDir)
 	err := tmpformac.CopyDirectory(existingMasterConfig, configDir)
 	if err != nil {
 		return "", err
 	}
-	if err := os.Remove(path.Join(configDir, "master-config.yaml")); err != nil {
+
+	// update some listen information to include starting the DNS server
+	masterconfigFilename := path.Join(configDir, "master-config.yaml")
+	masterconfig, err := componentinstall.ReadMasterConfig(masterconfigFilename)
+	if err != nil {
 		return "", err
 	}
 
-	masterConfigFilename := path.Join(configDir, "config.json")
-	if err := ioutil.WriteFile(masterConfigFilename, manifests.MustAsset("install/openshift-apiserver/static-config.json"), 0644); err != nil {
+	masterconfig.ServingInfo.BindAddress = "0.0.0.0:8445"
+
+	// hardcode the route suffix to the old default.  If anyone wants to change it, they can modify their config.
+	masterconfig.RoutingConfig.Subdomain = routingSuffix
+
+	// use the generated service serving cert
+	masterconfig.ServingInfo.CertFile = "/var/serving-cert/tls.crt"
+	masterconfig.ServingInfo.KeyFile = "/var/serving-cert/tls.key"
+
+	addImagePolicyAdmission(&masterconfig.AdmissionConfig)
+
+	if err := componentinstall.WriteMasterConfig(masterconfigFilename, masterconfig); err != nil {
 		return "", err
 	}
 

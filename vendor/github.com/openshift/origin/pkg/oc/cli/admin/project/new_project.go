@@ -16,14 +16,15 @@ import (
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
-	authorizationv1 "github.com/openshift/api/authorization/v1"
-	projectv1 "github.com/openshift/api/project/v1"
-	authorizationv1typedclient "github.com/openshift/client-go/authorization/clientset/versioned/typed/authorization/v1"
-	projectv1typedclient "github.com/openshift/client-go/project/clientset/versioned/typed/project/v1"
 	oapi "github.com/openshift/origin/pkg/api"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	authorizationclientinternal "github.com/openshift/origin/pkg/authorization/generated/internalclientset"
+	authorizationtypedclient "github.com/openshift/origin/pkg/authorization/generated/internalclientset/typed/authorization/internalversion"
 	"github.com/openshift/origin/pkg/cmd/server/bootstrappolicy"
 	"github.com/openshift/origin/pkg/oc/cli/admin/policy"
 	projectapi "github.com/openshift/origin/pkg/project/apis/project"
+	projectclientinternal "github.com/openshift/origin/pkg/project/generated/internalclientset"
+	projectclient "github.com/openshift/origin/pkg/project/generated/internalclientset/typed/project/internalversion"
 )
 
 const NewProjectRecommendedName = "new-project"
@@ -35,9 +36,9 @@ type NewProjectOptions struct {
 	NodeSelector string
 
 	UseNodeSelector bool
-	ProjectClient   projectv1typedclient.ProjectV1Interface
+	ProjectClient   projectclient.ProjectInterface
 	RbacClient      rbacv1client.RbacV1Interface
-	SARClient       authorizationv1typedclient.SubjectAccessReviewInterface
+	SARClient       authorizationtypedclient.SubjectAccessReviewInterface
 
 	AdminRole string
 	AdminUser string
@@ -96,19 +97,21 @@ func (o *NewProjectOptions) complete(f kcmdutil.Factory, cmd *cobra.Command, arg
 	if err != nil {
 		return err
 	}
-	o.ProjectClient, err = projectv1typedclient.NewForConfig(clientConfig)
+	projectClient, err := projectclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
+	o.ProjectClient = projectClient.Project()
 	o.RbacClient, err = rbacv1client.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	authorizationClient, err := authorizationv1typedclient.NewForConfig(clientConfig)
+	authorizationClient, err := authorizationclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
-	o.SARClient = authorizationClient.SubjectAccessReviews()
+	authorizationInterface := authorizationClient.Authorization()
+	o.SARClient = authorizationInterface.SubjectAccessReviews()
 
 	return nil
 }
@@ -122,7 +125,7 @@ func (o *NewProjectOptions) Run() error {
 		return fmt.Errorf("project %v already exists", o.ProjectName)
 	}
 
-	project := &projectv1.Project{}
+	project := &projectapi.Project{}
 	project.Name = o.ProjectName
 	project.Annotations = make(map[string]string)
 	project.Annotations[oapi.OpenShiftDescription] = o.Description
@@ -152,8 +155,8 @@ func (o *NewProjectOptions) Run() error {
 			errs = append(errs, err)
 		} else {
 			if err := wait.PollImmediate(time.Second, time.Minute, func() (bool, error) {
-				resp, err := o.SARClient.Create(&authorizationv1.SubjectAccessReview{
-					Action: authorizationv1.Action{
+				resp, err := o.SARClient.Create(&authorizationapi.SubjectAccessReview{
+					Action: authorizationapi.Action{
 						Namespace: o.ProjectName,
 						Verb:      "get",
 						Resource:  "projects",

@@ -60,7 +60,6 @@ type clusterQuotaAdmission struct {
 var _ kubeapiserveradmission.WantsInternalKubeInformerFactory = &clusterQuotaAdmission{}
 var _ oadmission.WantsRESTClientConfig = &clusterQuotaAdmission{}
 var _ oadmission.WantsClusterQuota = &clusterQuotaAdmission{}
-var _ admission.ValidationInterface = &clusterQuotaAdmission{}
 
 const (
 	timeToWaitForCacheSync = 10 * time.Second
@@ -78,7 +77,7 @@ func NewClusterResourceQuota() (admission.Interface, error) {
 }
 
 // Admit makes admission decisions while enforcing clusterQuota
-func (q *clusterQuotaAdmission) Validate(a admission.Attributes) (err error) {
+func (q *clusterQuotaAdmission) Admit(a admission.Attributes) (err error) {
 	// ignore all operations that correspond to sub-resource actions
 	if len(a.GetSubresource()) != 0 {
 		return nil

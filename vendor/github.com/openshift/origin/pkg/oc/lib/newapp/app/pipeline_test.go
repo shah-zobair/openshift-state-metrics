@@ -5,14 +5,13 @@ import (
 	"reflect"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	appsv1 "github.com/openshift/api/apps/v1"
 	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 )
@@ -27,33 +26,33 @@ type containerDesc struct {
 	ports []portDesc
 }
 
-func fakeDeploymentConfig(name string, containers ...containerDesc) *appsv1.DeploymentConfig {
-	specContainers := []corev1.Container{}
+func fakeDeploymentConfig(name string, containers ...containerDesc) *appsapi.DeploymentConfig {
+	specContainers := []kapi.Container{}
 	for _, c := range containers {
-		container := corev1.Container{
+		container := kapi.Container{
 			Name: c.name,
 		}
 
-		container.Ports = []corev1.ContainerPort{}
+		container.Ports = []kapi.ContainerPort{}
 		for _, p := range c.ports {
-			container.Ports = append(container.Ports, corev1.ContainerPort{
+			container.Ports = append(container.Ports, kapi.ContainerPort{
 				Name:          fmt.Sprintf("port-%d-%s", p.port, p.protocol),
 				ContainerPort: int32(p.port),
-				Protocol:      corev1.Protocol(p.protocol),
+				Protocol:      kapi.Protocol(p.protocol),
 			})
 		}
 
 		specContainers = append(specContainers, container)
 	}
-	return &appsv1.DeploymentConfig{
+	return &appsapi.DeploymentConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: appsv1.DeploymentConfigSpec{
+		Spec: appsapi.DeploymentConfigSpec{
 			Replicas: 1,
 			Selector: map[string]string{"name": "test"},
-			Template: &corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
+			Template: &kapi.PodTemplateSpec{
+				Spec: kapi.PodSpec{
 					Containers: specContainers,
 				},
 			},
@@ -61,24 +60,23 @@ func fakeDeploymentConfig(name string, containers ...containerDesc) *appsv1.Depl
 	}
 }
 
-func expectedService(name string, ports ...portDesc) *corev1.Service {
-	servicePorts := []corev1.ServicePort{}
+func expectedService(name string, ports ...portDesc) *kapi.Service {
+	servicePorts := []kapi.ServicePort{}
 	for _, p := range ports {
-		servicePorts = append(servicePorts, corev1.ServicePort{
+		servicePorts = append(servicePorts, kapi.ServicePort{
 			// Name is derived purely from the port and protocol, ignoring the container port name
 			Name:       fmt.Sprintf("%d-%s", p.port, p.protocol),
 			Port:       int32(p.port),
-			Protocol:   corev1.Protocol(p.protocol),
+			Protocol:   kapi.Protocol(p.protocol),
 			TargetPort: intstr.FromInt(p.port),
 		})
 	}
 
-	return &corev1.Service{
-		TypeMeta: metav1.TypeMeta{APIVersion: corev1.SchemeGroupVersion.String(), Kind: "Service"},
+	return &kapi.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: corev1.ServiceSpec{
+		Spec: kapi.ServiceSpec{
 			Selector: map[string]string{"name": "test"},
 			Ports:    servicePorts,
 		},
@@ -88,7 +86,7 @@ func expectedService(name string, ports ...portDesc) *corev1.Service {
 func getServices(objects Objects) Objects {
 	result := Objects{}
 	for _, obj := range objects {
-		if _, isSvc := obj.(*corev1.Service); isSvc {
+		if _, isSvc := obj.(*kapi.Service); isSvc {
 			result = append(result, obj)
 		}
 	}

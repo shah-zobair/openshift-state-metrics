@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/golang/glog"
+
 	s2igit "github.com/openshift/source-to-image/pkg/scm/git"
 )
 

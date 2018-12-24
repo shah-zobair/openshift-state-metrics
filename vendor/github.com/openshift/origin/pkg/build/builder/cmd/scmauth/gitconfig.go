@@ -2,6 +2,8 @@ package scmauth
 
 import (
 	"path/filepath"
+
+	"github.com/golang/glog"
 )
 
 const GitConfigName = ".gitconfig"

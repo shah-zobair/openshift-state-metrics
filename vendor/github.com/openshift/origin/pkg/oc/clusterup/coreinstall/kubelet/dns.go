@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-
-	"github.com/openshift/origin/pkg/oc/clusterup/componentinstall"
+	"github.com/openshift/origin/pkg/oc/clusteradd/componentinstall"
 	"github.com/openshift/origin/pkg/oc/clusterup/coreinstall/tmpformac"
 )
 

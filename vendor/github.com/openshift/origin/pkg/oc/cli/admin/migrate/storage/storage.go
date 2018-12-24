@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/time/rate"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -91,10 +92,12 @@ func NewMigrateAPIStorageOptions(streams genericclioptions.IOStreams) *MigrateAP
 
 		bandwidth: 10,
 
-		ResourceOptions: *migrate.NewResourceOptions(streams).
-			WithIncludes([]string{"*"}).
-			WithUnstructured().
-			WithExcludes([]schema.GroupResource{
+		ResourceOptions: migrate.ResourceOptions{
+			IOStreams: streams,
+
+			Unstructured: true,
+			Include:      []string{"*"},
+			DefaultExcludes: []schema.GroupResource{
 				// openshift resources:
 				{Resource: "appliedclusterresourcequotas"},
 				{Resource: "imagestreamimages"}, {Resource: "imagestreamtags"}, {Resource: "imagestreammappings"}, {Resource: "imagestreamimports"},
@@ -114,8 +117,9 @@ func NewMigrateAPIStorageOptions(streams genericclioptions.IOStreams) *MigrateAP
 				{Resource: "replicationcontrollerdummies.extensions"},
 				{Resource: "podtemplates"},
 				{Resource: "selfsubjectaccessreviews", Group: "authorization.k8s.io"}, {Resource: "localsubjectaccessreviews", Group: "authorization.k8s.io"},
-			}).
-			WithOverlappingResources([]sets.String{
+			},
+			// Resources known to share the same storage
+			OverlappingResources: []sets.String{
 				// openshift resources:
 				sets.NewString("deploymentconfigs.apps.openshift.io", "deploymentconfigs"),
 
@@ -179,7 +183,8 @@ func NewMigrateAPIStorageOptions(streams genericclioptions.IOStreams) *MigrateAP
 				// kubernetes resources:
 				sets.NewString("horizontalpodautoscalers.autoscaling", "horizontalpodautoscalers.extensions"),
 				sets.NewString("jobs.batch", "jobs.extensions"),
-			}),
+			},
+		},
 	}
 }
 
@@ -263,10 +268,12 @@ func (o *MigrateAPIStorageOptions) Complete(f kcmdutil.Factory, c *cobra.Command
 	clientConfigCopy.Burst = 99999
 	clientConfigCopy.QPS = 99999
 
-	o.client, err = dynamic.NewForConfig(clientConfigCopy)
+	client, err := dynamic.NewForConfig(clientConfigCopy)
 	if err != nil {
 		return err
 	}
+
+	o.client = client
 
 	return nil
 }
@@ -302,6 +309,13 @@ func (o *MigrateAPIStorageOptions) save(info *resource.Info, reporter migrate.Re
 			Resource(info.Mapping.Resource).
 			Namespace(info.Namespace).
 			Update(oldObject)
+		// storage migration is special in that all it needs to do is a no-op update to cause
+		// the api server to migrate the object to the preferred version.  thus if we encounter
+		// a conflict, we know that something updated the object and we no longer need to do
+		// anything - if the object needed migration, the api server has already migrated it.
+		if errors.IsConflict(err) {
+			return migrate.ErrUnchanged
+		}
 		if err != nil {
 			return migrate.DefaultRetriable(info, err)
 		}

@@ -1,48 +1,46 @@
 package policy
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/openshift/api/authorization/v1"
 	"github.com/spf13/cobra"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	"k8s.io/kubernetes/pkg/printers"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
-	"k8s.io/kubernetes/pkg/kubectl/scheme"
-	"k8s.io/kubernetes/pkg/printers"
 
-	authorizationv1 "github.com/openshift/api/authorization/v1"
-	authorizationv1typedclient "github.com/openshift/client-go/authorization/clientset/versioned/typed/authorization/v1"
+	authorizationapi "github.com/openshift/origin/pkg/authorization/apis/authorization"
+	authorizationclientinternal "github.com/openshift/origin/pkg/authorization/generated/internalclientset"
+	oauthorizationtypedclient "github.com/openshift/origin/pkg/authorization/generated/internalclientset/typed/authorization/internalversion"
 )
 
 const WhoCanRecommendedName = "who-can"
 
 type WhoCanOptions struct {
-	PrintFlags *genericclioptions.PrintFlags
-
-	ToPrinter func(string) (printers.ResourcePrinter, error)
-
 	allNamespaces    bool
 	bindingNamespace string
-	client           authorizationv1typedclient.AuthorizationV1Interface
+	client           oauthorizationtypedclient.AuthorizationInterface
 
 	verb         string
 	resource     schema.GroupVersionResource
 	resourceName string
+
+	output   string
+	printObj func(runtime.Object) error
 
 	genericclioptions.IOStreams
 }
 
 func NewWhoCanOptions(streams genericclioptions.IOStreams) *WhoCanOptions {
 	return &WhoCanOptions{
-		PrintFlags: genericclioptions.NewPrintFlags("").WithTypeSetter(scheme.Scheme),
-
 		IOStreams: streams,
 	}
 }
@@ -61,8 +59,8 @@ func NewCmdWhoCan(name, fullName string, f kcmdutil.Factory, streams genericclio
 	}
 
 	cmd.Flags().BoolVar(&o.allNamespaces, "all-namespaces", o.allNamespaces, "If true, list who can perform the specified action in all namespaces.")
+	kcmdutil.AddPrinterFlags(cmd)
 
-	o.PrintFlags.AddFlags(cmd)
 	return cmd
 }
 
@@ -70,6 +68,11 @@ func (o *WhoCanOptions) complete(f kcmdutil.Factory, cmd *cobra.Command, args []
 	mapper, err := f.ToRESTMapper()
 	if err != nil {
 		return err
+	}
+
+	o.output = kcmdutil.GetFlagString(cmd, "output")
+	o.printObj = func(obj runtime.Object) error {
+		return kcmdutil.PrintObject(cmd, obj, o.Out)
 	}
 
 	switch len(args) {
@@ -87,19 +90,15 @@ func (o *WhoCanOptions) complete(f kcmdutil.Factory, cmd *cobra.Command, args []
 	if err != nil {
 		return err
 	}
-	o.client, err = authorizationv1typedclient.NewForConfig(clientConfig)
+	authorizationClient, err := authorizationclientinternal.NewForConfig(clientConfig)
 	if err != nil {
 		return err
 	}
+	o.client = authorizationClient.Authorization()
 
 	o.bindingNamespace, _, err = f.ToRawKubeConfigLoader().Namespace()
 	if err != nil {
 		return err
-	}
-
-	o.ToPrinter = func(operation string) (printers.ResourcePrinter, error) {
-		o.PrintFlags.NamePrintFlags.Operation = operation
-		return o.PrintFlags.ToPrinter()
 	}
 
 	return nil
@@ -123,32 +122,54 @@ func ResourceFor(mapper meta.RESTMapper, resourceArg string) schema.GroupVersion
 }
 
 func (o *WhoCanOptions) run() error {
-	authorizationAttributes := authorizationv1.Action{
+	authorizationAttributes := authorizationapi.Action{
 		Verb:         o.verb,
 		Group:        o.resource.Group,
 		Resource:     o.resource.Resource,
 		ResourceName: o.resourceName,
 	}
 
-	resourceAccessReviewResponse := &authorizationv1.ResourceAccessReviewResponse{}
+	resourceAccessReviewResponse := &authorizationapi.ResourceAccessReviewResponse{}
 	var err error
 	if o.allNamespaces {
-		resourceAccessReviewResponse, err = o.client.ResourceAccessReviews().Create(&authorizationv1.ResourceAccessReview{Action: authorizationAttributes})
+		resourceAccessReviewResponse, err = o.client.ResourceAccessReviews().Create(&authorizationapi.ResourceAccessReview{Action: authorizationAttributes})
 	} else {
-		resourceAccessReviewResponse, err = o.client.LocalResourceAccessReviews(o.bindingNamespace).Create(&authorizationv1.LocalResourceAccessReview{Action: authorizationAttributes})
+		resourceAccessReviewResponse, err = o.client.LocalResourceAccessReviews(o.bindingNamespace).Create(&authorizationapi.LocalResourceAccessReview{Action: authorizationAttributes})
 	}
 
 	if err != nil {
 		return err
 	}
 
-	message := bytes.NewBuffer([]byte{})
-	fmt.Fprintln(message)
+	if len(o.output) > 0 {
+		// the printing stack is hosed.  Directly get the printer we need.
+		printableResponse := &v1.ResourceAccessReviewResponse{}
+		if err := legacyscheme.Scheme.Convert(resourceAccessReviewResponse, printableResponse, nil); err != nil {
+			return err
+		}
+		switch o.output {
+		case "json":
+			printer := printers.JSONPrinter{}
+			if err := printer.PrintObj(printableResponse, o.Out); err != nil {
+				return err
+			}
+			return nil
+		case "yaml":
+			printer := printers.YAMLPrinter{}
+			if err := printer.PrintObj(printableResponse, o.Out); err != nil {
+				return err
+			}
+			return nil
+		default:
+			return fmt.Errorf("invalid output format %q, only yaml|json supported", o.output)
+
+		}
+	}
 
 	if resourceAccessReviewResponse.Namespace == metav1.NamespaceAll {
-		fmt.Fprintf(message, "\n%s\n", "Namespace: <all>")
+		fmt.Printf("Namespace: <all>\n")
 	} else {
-		fmt.Fprintf(message, "\nNamespace: %s\n", resourceAccessReviewResponse.Namespace)
+		fmt.Printf("Namespace: %s\n", resourceAccessReviewResponse.Namespace)
 	}
 
 	resourceDisplay := o.resource.Resource
@@ -156,30 +177,23 @@ func (o *WhoCanOptions) run() error {
 		resourceDisplay = resourceDisplay + "." + o.resource.Group
 	}
 
-	fmt.Fprintf(message, "Verb:      %s\n", o.verb)
-	fmt.Fprintf(message, "Resource:  %s\n", resourceDisplay)
-	if len(resourceAccessReviewResponse.UsersSlice) == 0 {
-		fmt.Fprintf(message, "\n%s\n", "Users:  none")
+	fmt.Printf("Verb:      %s\n", o.verb)
+	fmt.Printf("Resource:  %s\n\n", resourceDisplay)
+	if len(resourceAccessReviewResponse.Users) == 0 {
+		fmt.Printf("Users:  none\n\n")
 	} else {
-		userSlice := sets.NewString(resourceAccessReviewResponse.UsersSlice...)
-		fmt.Fprintf(message, "\nUsers:  %s\n", strings.Join(userSlice.List(), "\n        "))
+		fmt.Printf("Users:  %s\n\n", strings.Join(resourceAccessReviewResponse.Users.List(), "\n        "))
 	}
 
-	if len(resourceAccessReviewResponse.GroupsSlice) == 0 {
-		fmt.Fprintf(message, "\n%s\n", "Groups: none")
+	if len(resourceAccessReviewResponse.Groups) == 0 {
+		fmt.Printf("Groups: none\n\n")
 	} else {
-		groupSlice := sets.NewString(resourceAccessReviewResponse.GroupsSlice...)
-		fmt.Fprintf(message, "Groups: %s\n", strings.Join(groupSlice.List(), "\n        "))
+		fmt.Printf("Groups: %s\n\n", strings.Join(resourceAccessReviewResponse.Groups.List(), "\n        "))
 	}
 
 	if len(resourceAccessReviewResponse.EvaluationError) != 0 {
-		fmt.Fprintf(message, "\nError during evaluation, results may not be complete: %s\n", resourceAccessReviewResponse.EvaluationError)
+		fmt.Printf("Error during evaluation, results may not be complete: %s\n", resourceAccessReviewResponse.EvaluationError)
 	}
 
-	p, err := o.ToPrinter(message.String())
-	if err != nil {
-		return err
-	}
-
-	return p.PrintObj(resourceAccessReviewResponse, o.Out)
+	return nil
 }

@@ -8,18 +8,16 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	dockerv10 "github.com/openshift/api/image/docker10"
-	imagev1 "github.com/openshift/api/image/v1"
-	imagev1typedclient "github.com/openshift/client-go/image/clientset/versioned/typed/image/v1"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
-	imageutil "github.com/openshift/origin/pkg/image/util"
+	imageclient "github.com/openshift/origin/pkg/image/generated/internalclientset/typed/image/internalversion"
 )
 
 // ImageStreamSearcher searches the openshift server image streams for images matching a particular name
 type ImageStreamSearcher struct {
-	Client           imagev1typedclient.ImageV1Interface
-	Namespaces       []string
-	AllowMissingTags bool
+	Client            imageclient.ImageStreamsGetter
+	ImageStreamImages imageclient.ImageStreamImagesGetter
+	Namespaces        []string
+	AllowMissingTags  bool
 }
 
 func (r ImageStreamSearcher) Type() string {
@@ -91,7 +89,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 				imageref.Registry = ""
 				matchName := fmt.Sprintf("%s/%s", stream.Namespace, stream.Name)
 
-				addMatch := func(tag string, matchScore float32, image *dockerv10.DockerImage, notFound bool) {
+				addMatch := func(tag string, matchScore float32, image *imageapi.DockerImage, notFound bool) {
 					name := matchName
 					var description, argument string
 					if len(tag) > 0 {
@@ -110,7 +108,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 						Description: description,
 						Score:       matchScore,
 						ImageStream: stream,
-						DockerImage: image,
+						Image:       image,
 						ImageTag:    tag,
 						Meta:        meta,
 						NoTagsFound: notFound,
@@ -126,28 +124,23 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 				// using a "stable" branch by giving the control over version to the
 				// image stream author.
 				finalTag := searchTag
-				var specTag *imagev1.TagReference
-				if t, hasTag := imageutil.SpecHasTag(stream, searchTag); hasTag {
-					specTag = &t
-				}
-
-				if specTag != nil && followTag && !imageutil.HasAnnotationTag(specTag, imageapi.TagReferenceAnnotationTagHidden) {
+				if specTag, ok := stream.Spec.Tags[searchTag]; ok && followTag && !specTag.HasAnnotationTag(imageapi.TagReferenceAnnotationTagHidden) {
 					if specTag.From != nil && specTag.From.Kind == "ImageStreamTag" && !strings.Contains(specTag.From.Name, ":") {
-						if t, hasTag := imageutil.SpecHasTag(stream, specTag.From.Name); hasTag && !imageutil.HasAnnotationTag(&t, imageapi.TagReferenceAnnotationTagHidden) {
-							if imageutil.LatestTaggedImage(stream, specTag.From.Name) != nil {
+						if destSpecTag, ok := stream.Spec.Tags[specTag.From.Name]; ok && !destSpecTag.HasAnnotationTag(imageapi.TagReferenceAnnotationTagHidden) {
+							if imageapi.LatestTaggedImage(stream, specTag.From.Name) != nil {
 								finalTag = specTag.From.Name
 							}
 						}
 					}
 				}
 
-				latest := imageutil.LatestTaggedImage(stream, finalTag)
+				latest := imageapi.LatestTaggedImage(stream, finalTag)
 
 				// Special case in addition to the other tag not found cases: if no tag
 				// was specified, and "latest" is hidden, then behave as if "latest"
 				// doesn't exist (in this case, to get to "latest", the user must hard
 				// specify tag "latest").
-				if (specTag != nil && followTag && imageutil.HasAnnotationTag(specTag, imageapi.TagReferenceAnnotationTagHidden)) ||
+				if specTag, ok := stream.Spec.Tags[searchTag]; (ok && followTag && specTag.HasAnnotationTag(imageapi.TagReferenceAnnotationTagHidden)) ||
 					latest == nil || len(latest.Image) == 0 {
 
 					glog.V(2).Infof("no image recorded for %s/%s:%s", stream.Namespace, stream.Name, finalTag)
@@ -157,8 +150,8 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 					}
 					// Find tags that do exist and return those as partial matches
 					foundOtherTags := false
-					for _, tag := range stream.Status.Tags {
-						latest := imageutil.LatestTaggedImage(stream, tag.Tag)
+					for tag := range stream.Status.Tags {
+						latest := imageapi.LatestTaggedImage(stream, tag)
 						if latest == nil || len(latest.Image) == 0 {
 							continue
 						}
@@ -169,8 +162,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 						// the tags on the imagestream are hidden.  In this case, in new-app
 						// we should behave as the imagestream didn't exist at all.  This
 						// means not calling addMatch("", ..., nil, true) below.
-						t, hasTag := imageutil.SpecHasTag(stream, tag.Tag)
-						if hasTag && imageutil.HasAnnotationTag(&t, imageapi.TagReferenceAnnotationTagHidden) {
+						if stream.Spec.Tags[tag].HasAnnotationTag(imageapi.TagReferenceAnnotationTagHidden) {
 							continue
 						}
 
@@ -179,7 +171,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 						// with the latest tag (or one that is followed by the latest tag), or
 						// they specified a tag that we could not find.
 						tagScore := score + 0.5
-						addMatch(tag.Tag, tagScore, nil, false)
+						addMatch(tag, tagScore, nil, false)
 					}
 					if !foundOtherTags {
 						addMatch("", 0.5+score, nil, true)
@@ -187,7 +179,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 					continue
 				}
 
-				imageStreamImage, err := r.Client.ImageStreamImages(namespace).Get(imageapi.JoinImageStreamImage(stream.Name, latest.Image), metav1.GetOptions{})
+				imageStreamImage, err := r.ImageStreamImages.ImageStreamImages(namespace).Get(imageapi.JoinImageStreamImage(stream.Name, latest.Image), metav1.GetOptions{})
 				if err != nil {
 					if errors.IsNotFound(err) {
 						// continue searching
@@ -198,17 +190,7 @@ func (r ImageStreamSearcher) Search(precise bool, terms ...string) (ComponentMat
 					continue
 				}
 
-				if err := imageutil.ImageWithMetadata(&imageStreamImage.Image); err != nil {
-					errs = append(errs, err)
-					continue
-				}
-
-				dockerImage, ok := imageStreamImage.Image.DockerImageMetadata.Object.(*dockerv10.DockerImage)
-				if !ok {
-					continue
-				}
-
-				addMatch(finalTag, score, dockerImage, false)
+				addMatch(finalTag, score, &imageStreamImage.Image.DockerImageMetadata, false)
 				if score == 0.0 {
 					exact = true
 				}
@@ -239,10 +221,10 @@ func InputImageFromMatch(match *ComponentMatch) (*ImageRef, error) {
 			input.TagDirectly = true
 		}
 		input.AsImageStream = true
-		input.Info = match.DockerImage
+		input.Info = match.Image
 		return input, nil
 
-	case match.DockerImage != nil:
+	case match.Image != nil:
 		input, err := g.FromName(match.Value)
 		if err != nil {
 			return nil, err
@@ -252,7 +234,7 @@ func InputImageFromMatch(match *ComponentMatch) (*ImageRef, error) {
 			input.AsResolvedImage = true
 		}
 		input.AsImageStream = !match.LocalOnly
-		input.Info = match.DockerImage
+		input.Info = match.Image
 		input.Insecure = match.Insecure
 		return input, nil
 
@@ -268,26 +250,26 @@ func InputImageFromMatch(match *ComponentMatch) (*ImageRef, error) {
 // ImageStreamByAnnotationSearcher searches for image streams based on 'supports' annotations
 // found in tagged images belonging to the stream
 type ImageStreamByAnnotationSearcher struct {
-	Client            imagev1typedclient.ImageStreamsGetter
-	ImageStreamImages imagev1typedclient.ImageStreamImagesGetter
+	Client            imageclient.ImageStreamsGetter
+	ImageStreamImages imageclient.ImageStreamImagesGetter
 	Namespaces        []string
 
-	imageStreams map[string]*imagev1.ImageStreamList
+	imageStreams map[string]*imageapi.ImageStreamList
 }
 
 const supportsAnnotationKey = "supports"
 
 // NewImageStreamByAnnotationSearcher creates a new ImageStreamByAnnotationSearcher
-func NewImageStreamByAnnotationSearcher(streamClient imagev1typedclient.ImageStreamsGetter, imageClient imagev1typedclient.ImageStreamImagesGetter, namespaces []string) Searcher {
+func NewImageStreamByAnnotationSearcher(streamClient imageclient.ImageStreamsGetter, imageClient imageclient.ImageStreamImagesGetter, namespaces []string) Searcher {
 	return &ImageStreamByAnnotationSearcher{
 		Client:            streamClient,
 		ImageStreamImages: imageClient,
 		Namespaces:        namespaces,
-		imageStreams:      make(map[string]*imagev1.ImageStreamList),
+		imageStreams:      make(map[string]*imageapi.ImageStreamList),
 	}
 }
 
-func (r *ImageStreamByAnnotationSearcher) getImageStreams(namespace string) ([]imagev1.ImageStream, error) {
+func (r *ImageStreamByAnnotationSearcher) getImageStreams(namespace string) ([]imageapi.ImageStream, error) {
 	imageStreamList, ok := r.imageStreams[namespace]
 	if !ok {
 		var err error
@@ -322,13 +304,13 @@ func matchSupportsAnnotation(value, annotation string) (float32, bool) {
 	return 0, false
 }
 
-func (r *ImageStreamByAnnotationSearcher) annotationMatches(stream *imagev1.ImageStream, value string) []*ComponentMatch {
+func (r *ImageStreamByAnnotationSearcher) annotationMatches(stream *imageapi.ImageStream, value string) []*ComponentMatch {
 	if stream.Spec.Tags == nil {
 		glog.Infof("No tags found on image, returning nil")
 		return nil
 	}
 	matches := []*ComponentMatch{}
-	for _, tagref := range stream.Spec.Tags {
+	for tag, tagref := range stream.Spec.Tags {
 		if tagref.Annotations == nil {
 			continue
 		}
@@ -340,13 +322,13 @@ func (r *ImageStreamByAnnotationSearcher) annotationMatches(stream *imagev1.Imag
 		if !ok {
 			continue
 		}
-		latest := imageutil.LatestTaggedImage(stream, tagref.Name)
+		latest := imageapi.LatestTaggedImage(stream, tag)
 		if latest == nil {
 			continue
 		}
 		imageStream, err := r.ImageStreamImages.ImageStreamImages(stream.Namespace).Get(imageapi.JoinImageStreamImage(stream.Name, latest.Image), metav1.GetOptions{})
 		if err != nil {
-			glog.V(2).Infof("Could not retrieve image stream image for stream %q, tag %q: %v", stream.Name, tagref.Name, err)
+			glog.V(2).Infof("Could not retrieve image stream image for stream %q, tag %q: %v", stream.Name, tag, err)
 			continue
 		}
 		if imageStream == nil {
@@ -360,21 +342,11 @@ func (r *ImageStreamByAnnotationSearcher) annotationMatches(stream *imagev1.Imag
 		}
 
 		imageData := imageStream.Image
-		if err := imageutil.ImageWithMetadata(&imageData); err != nil {
-			glog.V(5).Infof("error obtaining docker image metadata: %v", err)
-			return nil
-		}
-
-		dockerImage, ok := imageData.DockerImageMetadata.Object.(*dockerv10.DockerImage)
-		if !ok {
-			continue
-		}
-
 		matchName := fmt.Sprintf("%s/%s", stream.Namespace, stream.Name)
 		description := fmt.Sprintf("Image stream %q in project %q", stream.Name, stream.Namespace)
-		if len(tagref.Name) > 0 {
-			matchName = fmt.Sprintf("%s:%s", matchName, tagref.Name)
-			description = fmt.Sprintf("Image stream %q (tag %q) in project %q", stream.Name, tagref.Name, stream.Namespace)
+		if len(tag) > 0 {
+			matchName = fmt.Sprintf("%s:%s", matchName, tag)
+			description = fmt.Sprintf("Image stream %q (tag %q) in project %q", stream.Name, tag, stream.Namespace)
 		}
 		glog.V(5).Infof("ImageStreamAnnotationSearcher match found: %s for %s with score %f", matchName, value, score)
 		match := &ComponentMatch{
@@ -385,8 +357,8 @@ func (r *ImageStreamByAnnotationSearcher) annotationMatches(stream *imagev1.Imag
 			Score:       score,
 
 			ImageStream: stream,
-			DockerImage: dockerImage,
-			ImageTag:    tagref.Name,
+			Image:       &imageData.DockerImageMetadata,
+			ImageTag:    tag,
 			Meta:        meta,
 		}
 		matches = append(matches, match)

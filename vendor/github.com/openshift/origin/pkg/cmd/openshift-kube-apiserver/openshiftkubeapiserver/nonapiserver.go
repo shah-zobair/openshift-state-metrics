@@ -3,15 +3,14 @@ package openshiftkubeapiserver
 import (
 	"net/http"
 
-	kubecontrolplanev1 "github.com/openshift/api/kubecontrolplane/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
+	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	oauthutil "github.com/openshift/origin/pkg/oauth/util"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	genericmux "k8s.io/apiserver/pkg/server/mux"
 	"k8s.io/client-go/informers"
 )
 
-func NewOpenshiftNonAPIConfig(generiConfig *genericapiserver.Config, kubeInformers informers.SharedInformerFactory, oauthConfig *osinv1.OAuthConfig, authConfig kubecontrolplanev1.MasterAuthConfig) (*OpenshiftNonAPIConfig, error) {
+func NewOpenshiftNonAPIConfig(generiConfig *genericapiserver.Config, kubeInformers informers.SharedInformerFactory, oauthConfig *configapi.OAuthConfig, authConfig configapi.MasterAuthConfig) (*OpenshiftNonAPIConfig, error) {
 	var err error
 	ret := &OpenshiftNonAPIConfig{
 		GenericConfig: &genericapiserver.RecommendedConfig{

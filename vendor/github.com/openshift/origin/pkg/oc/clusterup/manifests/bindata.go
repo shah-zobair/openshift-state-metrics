@@ -40,19 +40,15 @@
 // examples/service-catalog/service-catalog.yaml
 // install/automationservicebroker/install-rbac.yaml
 // install/automationservicebroker/install.yaml
-// install/cluster-kube-apiserver-operator/install.yaml
 // install/etcd/etcd.yaml
-// install/etcd/install.yaml
 // install/kube-apiserver/apiserver.yaml
 // install/kube-controller-manager/kube-controller-manager.yaml
 // install/kube-dns/install.yaml
 // install/kube-proxy/install.yaml
 // install/kube-scheduler/kube-scheduler.yaml
 // install/openshift-apiserver/install.yaml
-// install/openshift-apiserver/static-config.json
 // install/openshift-controller-manager/install-rbac.yaml
 // install/openshift-controller-manager/install.yaml
-// install/openshift-controller-manager/static-config.json
 // install/openshift-service-cert-signer-operator/install-rbac.yaml
 // install/openshift-service-cert-signer-operator/install.yaml
 // install/openshift-web-console-operator/install-rbac.yaml
@@ -16716,134 +16712,6 @@ func installAutomationservicebrokerInstallYaml() (*asset, error) {
 	return a, nil
 }
 
-var _installClusterKubeApiserverOperatorInstallYaml = []byte(`apiVersion: template.openshift.io/v1
-kind: Template
-parameters:
-- name: NAMESPACE
-  # This namespace must not be changed.
-  value: openshift-core-operators
-objects:
-- apiVersion: v1
-  kind: Namespace
-  metadata:
-    labels:
-      openshift.io/run-level: "0"
-    name: openshift-core-operators
-
-- apiVersion: apiextensions.k8s.io/v1beta1
-  kind: CustomResourceDefinition
-  metadata:
-    name: kubeapiserveroperatorconfigs.kubeapiserver.operator.openshift.io
-  spec:
-    scope: Cluster
-    group: kubeapiserver.operator.openshift.io
-    version: v1alpha1
-    names:
-      kind: KubeApiserverOperatorConfig
-      plural: kubeapiserveroperatorconfigs
-      singular: kubeapiserveroperatorconfig
-    subresources:
-      status: {}
-
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRoleBinding
-  metadata:
-    name: system:openshift:operator:cluster-kube-apiserver-operator
-  roleRef:
-    kind: ClusterRole
-    name: cluster-admin
-  subjects:
-  - kind: ServiceAccount
-    namespace: ${NAMESPACE}
-    name: openshift-cluster-kube-apiserver-operator
-
-- apiVersion: v1
-  kind: ConfigMap
-  metadata:
-    namespace: ${NAMESPACE}
-    name: openshift-cluster-kube-apiserver-operator-config
-  data:
-    config.yaml: |
-      apiVersion: operator.openshift.io/v1alpha1
-      kind: GenericOperatorConfig
-
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    namespace: ${NAMESPACE}
-    name: openshift-cluster-kube-apiserver-operator
-    labels:
-      app: openshift-cluster-kube-apiserver-operator
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: openshift-cluster-kube-apiserver-operator
-    template:
-      metadata:
-        name: openshift-cluster-kube-apiserver-operator
-        labels:
-          app: openshift-cluster-kube-apiserver-operator
-      spec:
-        serviceAccountName: openshift-cluster-kube-apiserver-operator
-        containers:
-        - name: operator
-          image: openshift/origin-cluster-kube-apiserver-operator:latest
-          imagePullPolicy: IfNotPresent
-          command: ["cluster-kube-apiserver-operator", "operator"]
-          args:
-          - "--config=/var/run/configmaps/config/config.yaml"
-          - "-v=4"
-          volumeMounts:
-          - mountPath: /var/run/configmaps/config
-            name: config
-        volumes:
-        - name: serving-cert
-          secret:
-            defaultMode: 400
-            secretName: openshift-cluster-kube-apiserver-operator-serving-cert
-            optional: true
-        - name: config
-          configMap:
-            defaultMode: 440
-            name: openshift-cluster-kube-apiserver-operator-config
-
-- apiVersion: v1
-  kind: ServiceAccount
-  metadata:
-    namespace: ${NAMESPACE}
-    name: openshift-cluster-kube-apiserver-operator
-    labels:
-      app: openshift-cluster-kube-apiserver-operator
-
-- apiVersion: kubeapiserver.operator.openshift.io/v1alpha1
-  kind: KubeApiserverOperatorConfig
-  metadata:
-    name: instance
-  spec:
-    managementState: Managed
-    imagePullSpec: openshift/origin-hypershift:latest
-    version: 3.11.0
-    logging:
-      level: 4
-    replicas: 2
-`)
-
-func installClusterKubeApiserverOperatorInstallYamlBytes() ([]byte, error) {
-	return _installClusterKubeApiserverOperatorInstallYaml, nil
-}
-
-func installClusterKubeApiserverOperatorInstallYaml() (*asset, error) {
-	bytes, err := installClusterKubeApiserverOperatorInstallYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "install/cluster-kube-apiserver-operator/install.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _installEtcdEtcdYaml = []byte(`kind: Pod
 apiVersion: v1
 metadata:
@@ -16897,44 +16765,6 @@ func installEtcdEtcdYaml() (*asset, error) {
 	return a, nil
 }
 
-var _installEtcdInstallYaml = []byte(`apiVersion: template.openshift.io/v1
-kind: Template
-metadata:
-  name: etcd
-parameters:
-- name: NAMESPACE
-  value: kube-system
-objects:
-
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: etcd
-    namespace: ${NAMESPACE}
-  spec:
-    selector:
-      openshift.io/component: etcd
-    ports:
-    - name: listen
-      port: 4001
-      protocol: TCP
-`)
-
-func installEtcdInstallYamlBytes() ([]byte, error) {
-	return _installEtcdInstallYaml, nil
-}
-
-func installEtcdInstallYaml() (*asset, error) {
-	bytes, err := installEtcdInstallYamlBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "install/etcd/install.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _installKubeApiserverApiserverYaml = []byte(`kind: Pod
 apiVersion: v1
 metadata:
@@ -16959,7 +16789,7 @@ spec:
         set -o allexport
         source /etc/origin/master/master.env
       fi
-      exec hypershift openshift-kube-apiserver --config=/etc/origin/master/config.json
+      exec hypershift openshift-kube-apiserver --config=/etc/origin/master/master-config.yaml
     securityContext:
       privileged: true
     volumeMounts:
@@ -17119,11 +16949,10 @@ objects:
         - name: kube-dns
           image: ${IMAGE}
           imagePullPolicy: ${OPENSHIFT_PULL_POLICY}
-          command: ["openshift-sdn"]
+          command: ["openshift", "start", "network"]
           args:
           - "--enable=dns"
           - "--config=/etc/origin/node/node-config.yaml"
-          - "--kubeconfig=/etc/origin/node/node.kubeconfig"
           securityContext:
             privileged: true
             runAsUser: 0
@@ -17236,12 +17065,11 @@ objects:
         - name: kube-proxy
           image: ${IMAGE}
           imagePullPolicy: ${OPENSHIFT_PULL_POLICY}
-          command: ["openshift-sdn"]
+          command: ["openshift", "start", "network"]
           args:
           - "--enable=proxy"
           - "--listen=https://0.0.0.0:8444"
           - "--config=/etc/origin/node/node-config.yaml"
-          - "--kubeconfig=/etc/origin/node/node.kubeconfig"
           securityContext:
             privileged: true
             runAsUser: 0
@@ -17345,18 +17173,6 @@ parameters:
   value: "{}"
 objects:
 
-- apiVersion: rbac.authorization.k8s.io/v1
-  kind: ClusterRoleBinding
-  metadata:
-    name: system:openshift:operator:openshift-apiserver
-  roleRef:
-    kind: ClusterRole
-    name: cluster-admin
-  subjects:
-  - kind: ServiceAccount
-    namespace: ${NAMESPACE}
-    name: openshift-apiserver
-
 - apiVersion: apps/v1
   kind: DaemonSet
   metadata:
@@ -17379,6 +17195,7 @@ objects:
       spec:
         serviceAccountName: openshift-apiserver
         restartPolicy: Always
+        hostNetwork: true
         containers:
         - name: apiserver
           image: ${IMAGE}
@@ -17388,10 +17205,10 @@ objects:
             value: registry.centos.org
           command: ["hypershift", "openshift-apiserver"]
           args:
-          - "--config=/etc/origin/master/config.json"
+          - "--config=/etc/origin/master/master-config.yaml"
           - "-v=${LOGLEVEL}"
           ports:
-          - containerPort: 8443
+          - containerPort: 8445
           securityContext:
             privileged: true
             runAsUser: 0
@@ -17405,7 +17222,7 @@ objects:
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8443
+              port: 8445
               scheme: HTTPS
         # sensitive files still sit on disk for now
         volumes:
@@ -17440,7 +17257,7 @@ objects:
     ports:
     - name: https
       port: 443
-      targetPort: 8443
+      targetPort: 8445
 
 - apiVersion: apiregistration.k8s.io/v1beta1
   kind: APIService
@@ -17638,36 +17455,6 @@ func installOpenshiftApiserverInstallYaml() (*asset, error) {
 	return a, nil
 }
 
-var _installOpenshiftApiserverStaticConfigJson = []byte(`{
-  "apiVersion": "openshiftcontrolplane.config.openshift.io/v1",
-  "kind": "OpenShiftAPIServerConfig",
-  "servingInfo": {
-    "certFile": "/var/serving-cert/tls.crt",
-    "keyFile": "/var/serving-cert/tls.key",
-    "clientCA": "ca.crt"
-  },
-  "storageConfig": {
-    "ca": "ca.crt",
-    "certFile": "master.etcd-client.crt",
-    "keyFile": "master.etcd-client.key"
-  }
-}`)
-
-func installOpenshiftApiserverStaticConfigJsonBytes() ([]byte, error) {
-	return _installOpenshiftApiserverStaticConfigJson, nil
-}
-
-func installOpenshiftApiserverStaticConfigJson() (*asset, error) {
-	bytes, err := installOpenshiftApiserverStaticConfigJsonBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "install/openshift-apiserver/static-config.json", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
 var _installOpenshiftControllerManagerInstallRbacYaml = []byte(`apiVersion: template.openshift.io/v1
 kind: Template
 parameters:
@@ -17845,42 +17632,38 @@ objects:
       spec:
         serviceAccountName: openshift-controller-manager
         restartPolicy: Always
+        hostNetwork: true
         containers:
-        - name: controller-manager
+        - name: c
           image: ${IMAGE}
           imagePullPolicy: ${OPENSHIFT_PULL_POLICY}
           command: ["hypershift", "openshift-controller-manager"]
           args:
-          - "--config=/var/run/configmaps/config/config.json"
+          - "--config=/etc/origin/master/master-config.yaml"
           - "--v=${LOGLEVEL}"
           ports:
-          - containerPort: 8443
+          - containerPort: 8444
           securityContext:
             privileged: true
             runAsUser: 0
           volumeMounts:
-          - mountPath: /var/run/configmaps/config
-            name: config
-          - mountPath: /var/run/configmaps/client-ca
-            name: client-ca
-          - mountPath: /var/run/secrets/serving-cert
-            name: serving-cert
+           - mountPath: /etc/origin/master/
+             name: master-config
+           - mountPath: /etc/origin/cloudprovider/
+             name: master-cloud-provider
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8443
+              port: 8444
               scheme: HTTPS
         # sensitive files still sit on disk for now
         volumes:
-        - name: config
+        - name: master-config
           hostPath:
             path: ${OPENSHIFT_CONTROLLER_MANAGER_CONFIG_HOST_PATH}
-        - name: client-ca
+        - name: master-cloud-provider
           hostPath:
-            path: ${OPENSHIFT_CONTROLLER_MANAGER_CONFIG_HOST_PATH}
-        - name: serving-cert
-          secret:
-            secretName: serving-cert
+            path: /etc/origin/cloudprovider
 
 
 # to be able to assign powers to the process
@@ -17890,21 +17673,6 @@ objects:
     namespace: ${NAMESPACE}
     name: openshift-controller-manager
 
-
-- apiVersion: v1
-  kind: Service
-  metadata:
-    namespace: ${NAMESPACE}
-    name: controller-manager
-    annotations:
-      service.alpha.openshift.io/serving-cert-secret-name: serving-cert
-  spec:
-    selector:
-      openshift.io/component: controllers
-    ports:
-    - name: https
-      port: 443
-      targetPort: 8443
 `)
 
 func installOpenshiftControllerManagerInstallYamlBytes() ([]byte, error) {
@@ -17918,27 +17686,6 @@ func installOpenshiftControllerManagerInstallYaml() (*asset, error) {
 	}
 
 	info := bindataFileInfo{name: "install/openshift-controller-manager/install.yaml", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
-	a := &asset{bytes: bytes, info: info}
-	return a, nil
-}
-
-var _installOpenshiftControllerManagerStaticConfigJson = []byte(`{
-  "apiVersion": "openshiftcontrolplane.config.openshift.io/v1",
-  "kind": "OpenShiftControllerManagerConfig",
-  "controllers": ["*", "-openshift.io/service-serving-cert"]
-}`)
-
-func installOpenshiftControllerManagerStaticConfigJsonBytes() ([]byte, error) {
-	return _installOpenshiftControllerManagerStaticConfigJson, nil
-}
-
-func installOpenshiftControllerManagerStaticConfigJson() (*asset, error) {
-	bytes, err := installOpenshiftControllerManagerStaticConfigJsonBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	info := bindataFileInfo{name: "install/openshift-controller-manager/static-config.json", size: 0, mode: os.FileMode(0), modTime: time.Unix(0, 0)}
 	a := &asset{bytes: bytes, info: info}
 	return a, nil
 }
@@ -18052,7 +17799,7 @@ objects:
         serviceAccountName: openshift-service-cert-signer-operator
         containers:
         - name: operator
-          image: ${IMAGE}
+          image: openshift/origin-service-serving-cert-signer:v3.11
           imagePullPolicy: ${OPENSHIFT_PULL_POLICY}
           command: ["service-serving-cert-signer", "operator"]
           args:
@@ -18086,7 +17833,7 @@ objects:
     name: instance
   spec:
     managementState: Managed
-    imagePullSpec: ${IMAGE}
+    imagePullSpec: openshift/origin-service-serving-cert-signer:v3.11
     version: 3.10.0
     logging:
       level: 4
@@ -18223,12 +17970,10 @@ objects:
         volumes:
         - name: serving-cert
           secret:
-            defaultMode: 400
             secretName: openshift-web-console-operator-serving-cert
             optional: true
         - name: config
           configMap:
-            defaultMode: 440
             name: openshift-web-console-operator-config
 
 - apiVersion: v1
@@ -18907,19 +18652,15 @@ var _bindata = map[string]func() (*asset, error){
 	"examples/service-catalog/service-catalog.yaml": examplesServiceCatalogServiceCatalogYaml,
 	"install/automationservicebroker/install-rbac.yaml": installAutomationservicebrokerInstallRbacYaml,
 	"install/automationservicebroker/install.yaml": installAutomationservicebrokerInstallYaml,
-	"install/cluster-kube-apiserver-operator/install.yaml": installClusterKubeApiserverOperatorInstallYaml,
 	"install/etcd/etcd.yaml": installEtcdEtcdYaml,
-	"install/etcd/install.yaml": installEtcdInstallYaml,
 	"install/kube-apiserver/apiserver.yaml": installKubeApiserverApiserverYaml,
 	"install/kube-controller-manager/kube-controller-manager.yaml": installKubeControllerManagerKubeControllerManagerYaml,
 	"install/kube-dns/install.yaml": installKubeDnsInstallYaml,
 	"install/kube-proxy/install.yaml": installKubeProxyInstallYaml,
 	"install/kube-scheduler/kube-scheduler.yaml": installKubeSchedulerKubeSchedulerYaml,
 	"install/openshift-apiserver/install.yaml": installOpenshiftApiserverInstallYaml,
-	"install/openshift-apiserver/static-config.json": installOpenshiftApiserverStaticConfigJson,
 	"install/openshift-controller-manager/install-rbac.yaml": installOpenshiftControllerManagerInstallRbacYaml,
 	"install/openshift-controller-manager/install.yaml": installOpenshiftControllerManagerInstallYaml,
-	"install/openshift-controller-manager/static-config.json": installOpenshiftControllerManagerStaticConfigJson,
 	"install/openshift-service-cert-signer-operator/install-rbac.yaml": installOpenshiftServiceCertSignerOperatorInstallRbacYaml,
 	"install/openshift-service-cert-signer-operator/install.yaml": installOpenshiftServiceCertSignerOperatorInstallYaml,
 	"install/openshift-web-console-operator/install-rbac.yaml": installOpenshiftWebConsoleOperatorInstallRbacYaml,
@@ -19034,12 +18775,8 @@ var _bintree = &bintree{nil, map[string]*bintree{
 			"install-rbac.yaml": &bintree{installAutomationservicebrokerInstallRbacYaml, map[string]*bintree{}},
 			"install.yaml": &bintree{installAutomationservicebrokerInstallYaml, map[string]*bintree{}},
 		}},
-		"cluster-kube-apiserver-operator": &bintree{nil, map[string]*bintree{
-			"install.yaml": &bintree{installClusterKubeApiserverOperatorInstallYaml, map[string]*bintree{}},
-		}},
 		"etcd": &bintree{nil, map[string]*bintree{
 			"etcd.yaml": &bintree{installEtcdEtcdYaml, map[string]*bintree{}},
-			"install.yaml": &bintree{installEtcdInstallYaml, map[string]*bintree{}},
 		}},
 		"kube-apiserver": &bintree{nil, map[string]*bintree{
 			"apiserver.yaml": &bintree{installKubeApiserverApiserverYaml, map[string]*bintree{}},
@@ -19058,12 +18795,10 @@ var _bintree = &bintree{nil, map[string]*bintree{
 		}},
 		"openshift-apiserver": &bintree{nil, map[string]*bintree{
 			"install.yaml": &bintree{installOpenshiftApiserverInstallYaml, map[string]*bintree{}},
-			"static-config.json": &bintree{installOpenshiftApiserverStaticConfigJson, map[string]*bintree{}},
 		}},
 		"openshift-controller-manager": &bintree{nil, map[string]*bintree{
 			"install-rbac.yaml": &bintree{installOpenshiftControllerManagerInstallRbacYaml, map[string]*bintree{}},
 			"install.yaml": &bintree{installOpenshiftControllerManagerInstallYaml, map[string]*bintree{}},
-			"static-config.json": &bintree{installOpenshiftControllerManagerStaticConfigJson, map[string]*bintree{}},
 		}},
 		"openshift-service-cert-signer-operator": &bintree{nil, map[string]*bintree{
 			"install-rbac.yaml": &bintree{installOpenshiftServiceCertSignerOperatorInstallRbacYaml, map[string]*bintree{}},

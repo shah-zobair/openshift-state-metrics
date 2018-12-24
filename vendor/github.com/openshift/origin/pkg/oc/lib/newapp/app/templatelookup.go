@@ -6,20 +6,21 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-	corev1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/resource"
-	"k8s.io/kubernetes/pkg/kubectl/scheme"
 
-	templatev1 "github.com/openshift/api/template/v1"
-	templatev1typedclient "github.com/openshift/client-go/template/clientset/versioned/typed/template/v1"
+	"github.com/openshift/origin/pkg/oc/util/ocscheme"
+	templateapi "github.com/openshift/origin/pkg/template/apis/template"
+	templateclient "github.com/openshift/origin/pkg/template/generated/internalclientset/typed/template/internalversion"
 )
 
 // TemplateSearcher resolves stored template arguments into template objects
 type TemplateSearcher struct {
-	Client           templatev1typedclient.TemplatesGetter
+	Client           templateclient.TemplatesGetter
 	Namespaces       []string
 	StopOnExactMatch bool
 }
@@ -123,7 +124,7 @@ func (r *TemplateFileSearcher) Search(precise bool, terms ...string) (ComponentM
 
 		var isSingleItemImplied bool
 		obj, err := r.Builder.
-			WithScheme(scheme.Scheme, scheme.Scheme.PrioritizedVersionsAllGroups()...).
+			WithScheme(ocscheme.ReadingInternalScheme).
 			NamespaceParam(r.Namespace).RequireNamespace().
 			FilenameParam(false, &resource.FilenameOptions{Recursive: false, Filenames: terms}).
 			Do().
@@ -145,7 +146,13 @@ func (r *TemplateFileSearcher) Search(precise bool, terms ...string) (ComponentM
 			}
 		}
 
-		if list, isList := obj.(*corev1.List); isList && !isSingleItemImplied {
+		if list, isList := obj.(*kapi.List); isList && !isSingleItemImplied {
+			if len(list.Items) == 1 {
+				obj = list.Items[0]
+				isSingleItemImplied = true
+			}
+		}
+		if list, isList := obj.(*v1.List); isList && !isSingleItemImplied {
 			if len(list.Items) == 1 {
 				obj = list.Items[0].Object
 				isSingleItemImplied = true
@@ -157,7 +164,7 @@ func (r *TemplateFileSearcher) Search(precise bool, terms ...string) (ComponentM
 			continue
 		}
 
-		template, ok := obj.(*templatev1.Template)
+		template, ok := obj.(*templateapi.Template)
 		if !ok {
 			errs = append(errs, fmt.Errorf("object in %q is not a template", term))
 			continue

@@ -54,6 +54,9 @@ func Register(plugins *admission.Plugins) {
 		})
 }
 
+var _ admission.MutationInterface = &imagePolicyPlugin{}
+var _ admission.ValidationInterface = &imagePolicyPlugin{}
+
 type imagePolicyPlugin struct {
 	*admission.Handler
 	config *imagepolicy.ImagePolicyConfig
@@ -69,8 +72,6 @@ type imagePolicyPlugin struct {
 
 var _ = oadmission.WantsRESTClientConfig(&imagePolicyPlugin{})
 var _ = oadmission.WantsDefaultRegistryFunc(&imagePolicyPlugin{})
-var _ = admission.ValidationInterface(&imagePolicyPlugin{})
-var _ = admission.MutationInterface(&imagePolicyPlugin{})
 
 type integratedRegistryMatcher struct {
 	rules.RegistryMatcher

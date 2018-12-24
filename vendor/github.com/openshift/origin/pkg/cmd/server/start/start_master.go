@@ -10,10 +10,6 @@ import (
 	"path"
 	"path/filepath"
 
-	"k8s.io/apimachinery/pkg/runtime"
-
-	legacyconfigv1 "github.com/openshift/api/legacyconfig/v1"
-
 	"github.com/coreos/go-systemd/daemon"
 	"github.com/golang/glog"
 	"github.com/openshift/origin/pkg/cmd/openshift-controller-manager"
@@ -31,7 +27,7 @@ import (
 	kubelettypes "k8s.io/kubernetes/pkg/kubelet/types"
 
 	"github.com/openshift/library-go/pkg/crypto"
-	"github.com/openshift/library-go/pkg/serviceability"
+	"github.com/openshift/origin/pkg/cmd/openshift-kube-apiserver"
 	"github.com/openshift/origin/pkg/cmd/server/admin"
 	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 	configapilatest "github.com/openshift/origin/pkg/cmd/server/apis/config/latest"
@@ -39,8 +35,6 @@ import (
 	"github.com/openshift/origin/pkg/cmd/server/etcd"
 	"github.com/openshift/origin/pkg/cmd/server/etcd/etcdserver"
 	"github.com/openshift/origin/pkg/cmd/server/origin"
-	"github.com/openshift/origin/pkg/cmd/server/origin/legacyconfigprocessing"
-	"github.com/openshift/origin/pkg/cmd/server/start/options"
 	cmdutil "github.com/openshift/origin/pkg/cmd/util"
 	"github.com/openshift/origin/pkg/cmd/util/variable"
 	usercache "github.com/openshift/origin/pkg/user/cache"
@@ -79,22 +73,22 @@ var masterLong = templates.LongDesc(`
 
 // NewCommandStartMaster provides a CLI handler for 'start master' command
 func NewCommandStartMaster(basename string, out, errout io.Writer) (*cobra.Command, *MasterOptions) {
-	opts := &MasterOptions{
+	options := &MasterOptions{
 		ExpireDays:       crypto.DefaultCertificateLifetimeInDays,
 		SignerExpireDays: crypto.DefaultCACertificateLifetimeInDays,
 		Output:           out,
 	}
-	opts.DefaultsFromName(basename)
+	options.DefaultsFromName(basename)
 
 	cmd := &cobra.Command{
 		Use:   "master",
 		Short: "Launch a master",
 		Long:  fmt.Sprintf(masterLong, basename),
 		Run: func(c *cobra.Command, args []string) {
-			kcmdutil.CheckErr(opts.Complete())
+			kcmdutil.CheckErr(options.Complete())
 
-			if opts.PrintIP {
-				u, err := opts.MasterArgs.GetMasterAddress()
+			if options.PrintIP {
+				u, err := options.MasterArgs.GetMasterAddress()
 				if err != nil {
 					glog.Fatal(err)
 				}
@@ -105,11 +99,11 @@ func NewCommandStartMaster(basename string, out, errout io.Writer) (*cobra.Comma
 				fmt.Fprintf(out, "%s\n", host)
 				return
 			}
-			kcmdutil.CheckErr(opts.Validate(args))
+			kcmdutil.CheckErr(options.Validate(args))
 
-			serviceability.StartProfiler()
+			origin.StartProfiler()
 
-			if err := opts.StartMaster(); err != nil {
+			if err := options.StartMaster(); err != nil {
 				if kerrors.IsInvalid(err) {
 					if details := err.(*kerrors.StatusError).ErrStatus.Details; details != nil {
 						fmt.Fprintf(errout, "Invalid %s %s\n", details.Kind, details.Name)
@@ -124,12 +118,12 @@ func NewCommandStartMaster(basename string, out, errout io.Writer) (*cobra.Comma
 		},
 	}
 
-	opts.MasterArgs = NewDefaultMasterArgs()
-	opts.MasterArgs.StartAPI = true
-	opts.MasterArgs.StartControllers = true
-	opts.MasterArgs.OverrideConfig = func(config *configapi.MasterConfig) error {
-		if opts.MasterArgs.MasterAddr.Provided {
-			if ip := net.ParseIP(opts.MasterArgs.MasterAddr.Host); ip != nil {
+	options.MasterArgs = NewDefaultMasterArgs()
+	options.MasterArgs.StartAPI = true
+	options.MasterArgs.StartControllers = true
+	options.MasterArgs.OverrideConfig = func(config *configapi.MasterConfig) error {
+		if options.MasterArgs.MasterAddr.Provided {
+			if ip := net.ParseIP(options.MasterArgs.MasterAddr.Host); ip != nil {
 				glog.V(2).Infof("Using a masterIP override %q", ip)
 				config.KubernetesMasterConfig.MasterIP = ip.String()
 			}
@@ -139,18 +133,18 @@ func NewCommandStartMaster(basename string, out, errout io.Writer) (*cobra.Comma
 
 	flags := cmd.Flags()
 
-	flags.Var(opts.MasterArgs.ConfigDir, "write-config", "Directory to write an initial config into.  After writing, exit without starting the server.")
-	flags.StringVar(&opts.ConfigFile, "config", "", "Location of the master configuration file to run from. When running from a configuration file, all other command-line arguments are ignored.")
-	flags.BoolVar(&opts.CreateCertificates, "create-certs", true, "Indicates whether missing certs should be created")
-	flags.IntVar(&opts.ExpireDays, "expire-days", opts.ExpireDays, "Validity of the certificates in days (defaults to 2 years). WARNING: extending this above default value is highly discouraged.")
-	flags.IntVar(&opts.SignerExpireDays, "signer-expire-days", opts.SignerExpireDays, "Validity of the CA certificate in days (defaults to 5 years). WARNING: extending this above default value is highly discouraged.")
-	flags.BoolVar(&opts.PrintIP, "print-ip", false, "Print the IP that would be used if no master IP is specified and exit.")
+	flags.Var(options.MasterArgs.ConfigDir, "write-config", "Directory to write an initial config into.  After writing, exit without starting the server.")
+	flags.StringVar(&options.ConfigFile, "config", "", "Location of the master configuration file to run from. When running from a configuration file, all other command-line arguments are ignored.")
+	flags.BoolVar(&options.CreateCertificates, "create-certs", true, "Indicates whether missing certs should be created")
+	flags.IntVar(&options.ExpireDays, "expire-days", options.ExpireDays, "Validity of the certificates in days (defaults to 2 years). WARNING: extending this above default value is highly discouraged.")
+	flags.IntVar(&options.SignerExpireDays, "signer-expire-days", options.SignerExpireDays, "Validity of the CA certificate in days (defaults to 5 years). WARNING: extending this above default value is highly discouraged.")
+	flags.BoolVar(&options.PrintIP, "print-ip", false, "Print the IP that would be used if no master IP is specified and exit.")
 
-	BindMasterArgs(opts.MasterArgs, flags, "")
-	options.BindListenArg(opts.MasterArgs.ListenArg, flags, "")
-	options.BindImageFormatArgs(opts.MasterArgs.ImageFormatArgs, flags, "")
-	options.BindKubeConnectionArgs(opts.MasterArgs.KubeConnectionArgs, flags, "")
-	options.BindNetworkArgs(opts.MasterArgs.NetworkArgs, flags, "")
+	BindMasterArgs(options.MasterArgs, flags, "")
+	BindListenArg(options.MasterArgs.ListenArg, flags, "")
+	BindImageFormatArgs(options.MasterArgs.ImageFormatArgs, flags, "")
+	BindKubeConnectionArgs(options.MasterArgs.KubeConnectionArgs, flags, "")
+	BindNetworkArgs(options.MasterArgs.NetworkArgs, flags, "")
 
 	// autocompletion hints
 	cmd.MarkFlagFilename("write-config")
@@ -161,7 +155,7 @@ func NewCommandStartMaster(basename string, out, errout io.Writer) (*cobra.Comma
 	cmd.AddCommand(startAPI)
 	cmd.AddCommand(startControllers)
 
-	return cmd, opts
+	return cmd, options
 }
 
 func (o MasterOptions) Validate(args []string) error {
@@ -437,23 +431,7 @@ func (m *Master) Start() error {
 			)
 		}()
 
-		// round trip to external
-		uncastExternalMasterConfig, err := configapi.Scheme.ConvertToVersion(m.config, legacyconfigv1.LegacySchemeGroupVersion)
-		if err != nil {
-			return err
-		}
-		legacyConfigCodec := configapi.Codecs.LegacyCodec(legacyconfigv1.LegacySchemeGroupVersion)
-		externalBytes, err := runtime.Encode(legacyConfigCodec, uncastExternalMasterConfig)
-		if err != nil {
-			return err
-		}
-		externalMasterConfig := &legacyconfigv1.MasterConfig{}
-		gvk := legacyconfigv1.LegacySchemeGroupVersion.WithKind("MasterConfig")
-		_, _, err = legacyConfigCodec.Decode(externalBytes, &gvk, externalMasterConfig)
-		if err != nil {
-			return err
-		}
-		openshiftControllerConfig := openshift_controller_manager.ConvertMasterConfigToOpenshiftControllerConfig(externalMasterConfig)
+		openshiftControllerConfig := openshift_controller_manager.ConvertMasterConfigToOpenshiftControllerConfig(m.config)
 		// if we're starting the API, then this one isn't supposed to serve
 		if m.api {
 			openshiftControllerConfig.ServingInfo = nil
@@ -471,7 +449,7 @@ func (m *Master) Start() error {
 			etcdserver.RunEtcd(m.config.EtcdConfig)
 		}
 
-		if err := legacyconfigprocessing.ConvertNetworkConfigToAdmissionConfig(m.config); err != nil {
+		if err := openshift_kube_apiserver.ConvertNetworkConfigToAdmissionConfig(m.config); err != nil {
 			return err
 		}
 

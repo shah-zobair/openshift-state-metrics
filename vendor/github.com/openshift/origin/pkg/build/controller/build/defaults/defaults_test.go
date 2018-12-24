@@ -6,17 +6,21 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	internalcore "k8s.io/kubernetes/pkg/apis/core"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 	kapihelper "k8s.io/kubernetes/pkg/apis/core/helper"
 
 	buildv1 "github.com/openshift/api/build/v1"
-	openshiftcontrolplanev1 "github.com/openshift/api/openshiftcontrolplane/v1"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	"github.com/openshift/origin/pkg/build/controller/common"
 	testutil "github.com/openshift/origin/pkg/build/controller/common/testutil"
 	buildutil "github.com/openshift/origin/pkg/build/util"
+	configapi "github.com/openshift/origin/pkg/cmd/server/apis/config"
 )
 
 func TestProxyDefaults(t *testing.T) {
-	defaultsConfig := &openshiftcontrolplanev1.BuildDefaultsConfig{
+	defaultsConfig := &configapi.BuildDefaultsConfig{
 		GitHTTPProxy:  "http",
 		GitHTTPSProxy: "https",
 		GitNoProxy:    "no",
@@ -45,8 +49,8 @@ func TestProxyDefaults(t *testing.T) {
 }
 
 func TestEnvDefaults(t *testing.T) {
-	defaultsConfig := &openshiftcontrolplanev1.BuildDefaultsConfig{
-		Env: []corev1.EnvVar{
+	defaultsConfig := &configapi.BuildDefaultsConfig{
+		Env: []internalcore.EnvVar{
 			{
 				Name:  "VAR1",
 				Value: "VALUE1",
@@ -148,8 +152,8 @@ func TestEnvDefaults(t *testing.T) {
 
 func TestIncrementalDefaults(t *testing.T) {
 	bool_t := true
-	defaultsConfig := &openshiftcontrolplanev1.BuildDefaultsConfig{
-		SourceStrategyDefaults: &openshiftcontrolplanev1.SourceStrategyDefaultsConfig{
+	defaultsConfig := &configapi.BuildDefaultsConfig{
+		SourceStrategyDefaults: &configapi.SourceStrategyDefaultsConfig{
 			Incremental: &bool_t,
 		},
 	}
@@ -299,8 +303,16 @@ func TestLabelDefaults(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		defaultsConfig := &openshiftcontrolplanev1.BuildDefaultsConfig{
-			ImageLabels: test.defaultLabels,
+		internalLabels := []buildapi.ImageLabel{}
+		for _, l := range test.defaultLabels {
+			internalLabel := buildapi.ImageLabel{}
+			if err := legacyscheme.Scheme.Convert(&l, &internalLabel, nil); err != nil {
+				panic(err)
+			}
+			internalLabels = append(internalLabels, internalLabel)
+		}
+		defaultsConfig := &configapi.BuildDefaultsConfig{
+			ImageLabels: internalLabels,
 		}
 
 		admitter := BuildDefaults{defaultsConfig}
@@ -349,7 +361,7 @@ func TestBuildDefaultsNodeSelector(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		defaults := BuildDefaults{Config: &openshiftcontrolplanev1.BuildDefaultsConfig{NodeSelector: test.defaults}}
+		defaults := BuildDefaults{Config: &configapi.BuildDefaultsConfig{NodeSelector: test.defaults}}
 		pod := testutil.Pod().WithBuild(t, test.build)
 		// normally the pod will have the nodeselectors from the build, due to the pod creation logic
 		// in the build controller flow. fake it out here.
@@ -401,7 +413,7 @@ func TestBuildDefaultsAnnotations(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		defaults := BuildDefaults{Config: &openshiftcontrolplanev1.BuildDefaultsConfig{Annotations: test.defaults}}
+		defaults := BuildDefaults{Config: &configapi.BuildDefaultsConfig{Annotations: test.defaults}}
 		pod := testutil.Pod().WithBuild(t, test.build)
 		pod.Annotations = test.annotations
 		err := defaults.ApplyDefaults((*corev1.Pod)(pod))
@@ -420,19 +432,19 @@ func TestBuildDefaultsAnnotations(t *testing.T) {
 }
 func TestResourceDefaults(t *testing.T) {
 	tests := map[string]struct {
-		DefaultResource  corev1.ResourceRequirements
+		DefaultResource  kapi.ResourceRequirements
 		BuildResource    corev1.ResourceRequirements
 		ExpectedResource corev1.ResourceRequirements
 	}{
 		"BuildDefaults plugin and Build object both defined resource limits and requests": {
-			DefaultResource: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("10"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("1G"),
+			DefaultResource: kapi.ResourceRequirements{
+				Limits: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("10"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("1G"),
 				},
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("20"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("2G"),
+				Requests: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("20"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("2G"),
 				},
 			},
 			BuildResource: corev1.ResourceRequirements{
@@ -457,14 +469,14 @@ func TestResourceDefaults(t *testing.T) {
 			},
 		},
 		"BuildDefaults plugin defined limits and requests, Build object defined resource requests": {
-			DefaultResource: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("10"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("1G"),
+			DefaultResource: kapi.ResourceRequirements{
+				Limits: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("10"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("1G"),
 				},
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("20"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("2G"),
+				Requests: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("20"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("2G"),
 				},
 			},
 			BuildResource: corev1.ResourceRequirements{
@@ -485,14 +497,14 @@ func TestResourceDefaults(t *testing.T) {
 			},
 		},
 		"BuildDefaults plugin defined limits and requests, Build object defined resource limits": {
-			DefaultResource: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("10"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("1G"),
+			DefaultResource: kapi.ResourceRequirements{
+				Limits: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("10"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("1G"),
 				},
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("20"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("2G"),
+				Requests: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("20"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("2G"),
 				},
 			},
 			BuildResource: corev1.ResourceRequirements{
@@ -513,7 +525,7 @@ func TestResourceDefaults(t *testing.T) {
 			},
 		},
 		"BuildDefaults plugin defined nothing, Build object defined resource limits": {
-			DefaultResource: corev1.ResourceRequirements{},
+			DefaultResource: kapi.ResourceRequirements{},
 			BuildResource: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("10"),
@@ -536,19 +548,19 @@ func TestResourceDefaults(t *testing.T) {
 			},
 		},
 		"BuildDefaults plugin and Build object defined nothing": {
-			DefaultResource:  corev1.ResourceRequirements{},
+			DefaultResource:  kapi.ResourceRequirements{},
 			BuildResource:    corev1.ResourceRequirements{},
 			ExpectedResource: corev1.ResourceRequirements{},
 		},
 		"BuildDefaults plugin defined limits and requests, Build object defined nothing": {
-			DefaultResource: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("10"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("1G"),
+			DefaultResource: kapi.ResourceRequirements{
+				Limits: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("10"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("1G"),
 				},
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU):    resource.MustParse("20"),
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("2G"),
+				Requests: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU):    resource.MustParse("20"),
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("2G"),
 				},
 			},
 			BuildResource: corev1.ResourceRequirements{},
@@ -564,12 +576,12 @@ func TestResourceDefaults(t *testing.T) {
 			},
 		},
 		"BuildDefaults plugin defined part of limits and requests, Build object defined part of limits and  requests": {
-			DefaultResource: corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceCPU): resource.MustParse("10"),
+			DefaultResource: kapi.ResourceRequirements{
+				Limits: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceCPU): resource.MustParse("10"),
 				},
-				Requests: corev1.ResourceList{
-					corev1.ResourceName(corev1.ResourceMemory): resource.MustParse("2G"),
+				Requests: kapi.ResourceList{
+					kapi.ResourceName(kapi.ResourceMemory): resource.MustParse("2G"),
 				},
 			},
 			BuildResource: corev1.ResourceRequirements{
@@ -594,7 +606,7 @@ func TestResourceDefaults(t *testing.T) {
 	}
 
 	for name, test := range tests {
-		defaults := BuildDefaults{Config: &openshiftcontrolplanev1.BuildDefaultsConfig{Resources: test.DefaultResource}}
+		defaults := BuildDefaults{Config: &configapi.BuildDefaultsConfig{Resources: test.DefaultResource}}
 
 		build := testutil.Build().WithSourceStrategy().AsBuild()
 		build.Spec.Resources = test.BuildResource

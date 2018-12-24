@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -18,9 +19,9 @@ import (
 	"k8s.io/client-go/discovery"
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
-	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/printers"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions/resource"
-	"k8s.io/kubernetes/pkg/kubectl/scheme"
+
+	"github.com/openshift/origin/pkg/oc/util/ocscheme"
 )
 
 // MigrateVisitFunc is invoked for each returned object, and may return a
@@ -100,10 +101,6 @@ func (w *syncedWriter) write(p []byte) (int, error) {
 // ResourceOptions assists in performing migrations on any object that
 // can be retrieved via the API.
 type ResourceOptions struct {
-	PrintFlags *genericclioptions.PrintFlags
-
-	Printer printers.ResourcePrinter
-
 	Unstructured  bool
 	AllNamespaces bool
 	Include       []string
@@ -138,38 +135,6 @@ type ResourceOptions struct {
 	genericclioptions.IOStreams
 }
 
-func NewResourceOptions(streams genericclioptions.IOStreams) *ResourceOptions {
-	return &ResourceOptions{
-		PrintFlags: genericclioptions.NewPrintFlags("migrated").WithTypeSetter(scheme.Scheme),
-		IOStreams:  streams,
-	}
-}
-
-func (o *ResourceOptions) WithIncludes(include []string) *ResourceOptions {
-	o.Include = include
-	return o
-}
-
-func (o *ResourceOptions) WithExcludes(defaultExcludes []schema.GroupResource) *ResourceOptions {
-	o.DefaultExcludes = defaultExcludes
-	return o
-}
-
-func (o *ResourceOptions) WithOverlappingResources(resources []sets.String) *ResourceOptions {
-	o.OverlappingResources = resources
-	return o
-}
-
-func (o *ResourceOptions) WithUnstructured() *ResourceOptions {
-	o.Unstructured = true
-	return o
-}
-
-func (o *ResourceOptions) WithAllNamespaces() *ResourceOptions {
-	o.AllNamespaces = true
-	return o
-}
-
 func (o *ResourceOptions) Bind(c *cobra.Command) {
 	c.Flags().StringSliceVar(&o.Include, "include", o.Include, "Resource types to migrate. Passing --filename will override this flag.")
 	c.Flags().BoolVar(&o.AllNamespaces, "all-namespaces", true, "Migrate objects in all namespaces. Defaults to true.")
@@ -178,7 +143,10 @@ func (o *ResourceOptions) Bind(c *cobra.Command) {
 	c.Flags().StringVar(&o.FromKey, "from-key", o.FromKey, "If specified, only migrate items with a key (namespace/name or name) greater than or equal to this value")
 	c.Flags().StringVar(&o.ToKey, "to-key", o.ToKey, "If specified, only migrate items with a key (namespace/name or name) less than this value")
 
-	o.PrintFlags.AddFlags(c)
+	// kcmdutil.PrinterForCommand needs these flags, however they are useless
+	// here because oc process returns list of heterogeneous objects that is
+	// not suitable for formatting as a table.
+	kcmdutil.AddNonDeprecatedPrinterFlags(c)
 
 	usage := "Filename, directory, or URL to docker-compose.yml file to use"
 	kcmdutil.AddJsonFilenameFlag(c.Flags(), &o.Filenames, usage)
@@ -186,28 +154,25 @@ func (o *ResourceOptions) Bind(c *cobra.Command) {
 
 func (o *ResourceOptions) Complete(f kcmdutil.Factory, c *cobra.Command) error {
 	o.Output = kcmdutil.GetFlagString(c, "output")
-
-	if o.DryRun {
-		o.PrintFlags.Complete("%s (dry run)")
-	}
-
-	var err error
-	o.Printer, err = o.PrintFlags.ToPrinter()
-	if err != nil {
-		return err
-	}
-
 	switch {
 	case len(o.Output) > 0:
+		printer, err := kcmdutil.PrinterForOptions(kcmdutil.ExtractCmdPrintOptions(c, false))
+		if err != nil {
+			return err
+		}
 		first := true
 		o.PrintFn = func(info *resource.Info, _ Reporter) error {
-			// We would normally pass an API list to the printer, however this command is special
-			// and does not have all of the infos it wants to print at the same time.
+			obj, err := legacyscheme.Scheme.ConvertToVersion(info.Object, info.Mapping.GroupVersionKind.GroupVersion())
+			if err != nil {
+				return err
+			}
+			// TODO: PrintObj is not correct for YAML - it should inject document separators itself
 			if o.Output == "yaml" && !first {
 				fmt.Fprintln(o.Out, "---")
 			}
 			first = false
-			return o.Printer.PrintObj(info.Object, o.Out)
+			printer.PrintObj(obj, o.Out)
+			return nil
 		}
 		o.DryRun = true
 	case o.Confirm:
@@ -258,6 +223,7 @@ func (o *ResourceOptions) Complete(f kcmdutil.Factory, c *cobra.Command) error {
 		return err
 	}
 
+	// if o.Include has * we need to update it via discovery and o.DefaultExcludes and o.OverlappingResources
 	resourceNames := sets.NewString()
 	for i, s := range o.Include {
 		if resourceNames.Has(s) {
@@ -265,13 +231,9 @@ func (o *ResourceOptions) Complete(f kcmdutil.Factory, c *cobra.Command) error {
 		}
 		if s != "*" {
 			resourceNames.Insert(s)
-			break
+			continue
 		}
 
-		all, err := FindAllCanonicalResources(discoveryClient, mapper)
-		if err != nil {
-			return fmt.Errorf("could not calculate the list of available resources: %v", err)
-		}
 		exclude := sets.NewString()
 		for _, gr := range o.DefaultExcludes {
 			if len(o.OverlappingResources) > 0 {
@@ -285,7 +247,16 @@ func (o *ResourceOptions) Complete(f kcmdutil.Factory, c *cobra.Command) error {
 			}
 			exclude.Insert(gr.String())
 		}
+
 		candidate := sets.NewString()
+
+		// keep this logic as close to the point of use as possible so that we limit our dependency on discovery
+		// since discovery is cached this does not repeatedly call out to the API
+		all, err := FindAllCanonicalResources(discoveryClient, mapper)
+		if err != nil {
+			return fmt.Errorf("could not calculate the list of available resources: %v", err)
+		}
+
 		for _, gr := range all {
 			// if the user specifies a resource that matches resource or resource+group, skip it
 			if resourceNames.Has(gr.Resource) || resourceNames.Has(gr.String()) || exclude.Has(gr.String()) {
@@ -345,7 +316,7 @@ func (o *ResourceOptions) Complete(f kcmdutil.Factory, c *cobra.Command) error {
 	if o.Unstructured {
 		o.Builder.Unstructured()
 	} else {
-		o.Builder.WithScheme(scheme.Scheme, scheme.Scheme.PrioritizedVersionsAllGroups()...)
+		o.Builder.WithScheme(ocscheme.ReadingInternalScheme)
 	}
 
 	if !allNamespaces {
@@ -754,18 +725,21 @@ func DefaultRetriable(info *resource.Info, err error) error {
 	}
 }
 
-// FindAllCanonicalResources returns all resource names that map directly to their kind (Kind -> Resource -> Kind)
-// and are not subresources. This is the closest mapping possible from the client side to resources that can be
-// listed and updated. Note that this may return some virtual resources (like imagestreamtags) that can be otherwise
-// represented.
+// FindAllCanonicalResources returns all resources that:
+// 1. map directly to their kind (Kind -> Resource -> Kind)
+// 2. are not subresources
+// 3. can be listed and updated
+// Note that this may return some virtual resources (like imagestreamtags) that can be otherwise represented.
 // TODO: add a field to APIResources for "virtual" (or that points to the canonical resource).
-// TODO: fallback to the scheme when discovery is not possible.
 func FindAllCanonicalResources(d discovery.ServerResourcesInterface, m meta.RESTMapper) ([]schema.GroupResource, error) {
 	set := make(map[schema.GroupResource]struct{})
+
+	// this call doesn't fail on aggregated apiserver failures
 	all, err := d.ServerResources()
 	if err != nil {
 		return nil, err
 	}
+
 	for _, serverResource := range all {
 		gv, err := schema.ParseGroupVersion(serverResource.GroupVersion)
 		if err != nil {
@@ -774,6 +748,10 @@ func FindAllCanonicalResources(d discovery.ServerResourcesInterface, m meta.REST
 		for _, r := range serverResource.APIResources {
 			// ignore subresources
 			if strings.Contains(r.Name, "/") {
+				continue
+			}
+			// ignore resources that cannot be listed and updated
+			if !sets.NewString(r.Verbs...).HasAll("list", "update") {
 				continue
 			}
 			// because discovery info doesn't tell us whether the object is virtual or not, perform a lookup
@@ -786,6 +764,7 @@ func FindAllCanonicalResources(d discovery.ServerResourcesInterface, m meta.REST
 			}
 		}
 	}
+
 	var groupResources []schema.GroupResource
 	for k := range set {
 		groupResources = append(groupResources, k)

@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
-	securityv1 "github.com/openshift/api/security/v1"
+	securityapi "github.com/openshift/origin/pkg/security/apis/security"
 )
 
 func TestComputeDefinitions(t *testing.T) {
@@ -16,10 +16,10 @@ func TestComputeDefinitions(t *testing.T) {
 	diffPriv.AllowPrivilegedContainer = true
 
 	diffCaps := goodSCC()
-	diffCaps.AllowedCapabilities = []corev1.Capability{"foo"}
+	diffCaps.AllowedCapabilities = []kapi.Capability{"foo"}
 
 	diffHostDir := goodSCC()
-	diffHostDir.Volumes = []securityv1.FSType{securityv1.FSTypeHostPath}
+	diffHostDir.Volumes = []securityapi.FSType{securityapi.FSTypeHostPath}
 
 	diffHostNetwork := goodSCC()
 	diffHostNetwork.AllowHostNetwork = true
@@ -34,28 +34,28 @@ func TestComputeDefinitions(t *testing.T) {
 	diffHostIPC.AllowHostIPC = true
 
 	diffSELinux := goodSCC()
-	diffSELinux.SELinuxContext.Type = securityv1.SELinuxStrategyMustRunAs
+	diffSELinux.SELinuxContext.Type = securityapi.SELinuxStrategyMustRunAs
 
 	diffRunAsUser := goodSCC()
-	diffRunAsUser.RunAsUser.Type = securityv1.RunAsUserStrategyMustRunAs
+	diffRunAsUser.RunAsUser.Type = securityapi.RunAsUserStrategyMustRunAs
 
 	diffSupGroups := goodSCC()
-	diffSupGroups.SupplementalGroups.Type = securityv1.SupplementalGroupsStrategyMustRunAs
+	diffSupGroups.SupplementalGroups.Type = securityapi.SupplementalGroupsStrategyMustRunAs
 
 	diffFSGroup := goodSCC()
-	diffFSGroup.FSGroup.Type = securityv1.FSGroupStrategyMustRunAs
+	diffFSGroup.FSGroup.Type = securityapi.FSGroupStrategyMustRunAs
 
 	diffVolumes := goodSCC()
-	diffVolumes.Volumes = []securityv1.FSType{securityv1.FSTypeAWSElasticBlockStore}
+	diffVolumes.Volumes = []securityapi.FSType{securityapi.FSTypeAWSElasticBlockStore}
 
 	noDiffVolumesA := goodSCC()
-	noDiffVolumesA.Volumes = []securityv1.FSType{securityv1.FSTypeAWSElasticBlockStore, securityv1.FSTypeHostPath}
+	noDiffVolumesA.Volumes = []securityapi.FSType{securityapi.FSTypeAWSElasticBlockStore, securityapi.FSTypeHostPath}
 	noDiffVolumesB := goodSCC()
-	noDiffVolumesB.Volumes = []securityv1.FSType{securityv1.FSTypeHostPath, securityv1.FSTypeAWSElasticBlockStore}
+	noDiffVolumesB.Volumes = []securityapi.FSType{securityapi.FSTypeHostPath, securityapi.FSTypeAWSElasticBlockStore}
 
 	tests := map[string]struct {
-		expected    securityv1.SecurityContextConstraints
-		actual      securityv1.SecurityContextConstraints
+		expected    securityapi.SecurityContextConstraints
+		actual      securityapi.SecurityContextConstraints
 		needsUpdate bool
 	}{
 		"different priv": {
@@ -365,8 +365,8 @@ func TestComputeUnioningUsersAndGroups(t *testing.T) {
 	missingUser.Users = []string{"foo"}
 
 	tests := map[string]struct {
-		expected       securityv1.SecurityContextConstraints
-		actual         securityv1.SecurityContextConstraints
+		expected       securityapi.SecurityContextConstraints
+		actual         securityapi.SecurityContextConstraints
 		expectedGroups []string
 		expectedUsers  []string
 		needsUpdate    bool
@@ -458,8 +458,8 @@ func TestComputeUnioningPriorities(t *testing.T) {
 	priorityTwo := int32(2)
 
 	tests := map[string]struct {
-		expected         securityv1.SecurityContextConstraints
-		actual           securityv1.SecurityContextConstraints
+		expected         securityapi.SecurityContextConstraints
+		actual           securityapi.SecurityContextConstraints
 		expectedPriority *int32
 		needsUpdate      bool
 		union            bool
@@ -566,28 +566,28 @@ func TestComputeUnioningPriorities(t *testing.T) {
 	}
 }
 
-func goodSCCWithPriority(priority int32) securityv1.SecurityContextConstraints {
+func goodSCCWithPriority(priority int32) securityapi.SecurityContextConstraints {
 	scc := goodSCC()
 	scc.Priority = &priority
 	return scc
 }
 
-func goodSCC() securityv1.SecurityContextConstraints {
-	return securityv1.SecurityContextConstraints{
+func goodSCC() securityapi.SecurityContextConstraints {
+	return securityapi.SecurityContextConstraints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "scc-admin",
 		},
-		RunAsUser: securityv1.RunAsUserStrategyOptions{
-			Type: securityv1.RunAsUserStrategyRunAsAny,
+		RunAsUser: securityapi.RunAsUserStrategyOptions{
+			Type: securityapi.RunAsUserStrategyRunAsAny,
 		},
-		SELinuxContext: securityv1.SELinuxContextStrategyOptions{
-			Type: securityv1.SELinuxStrategyRunAsAny,
+		SELinuxContext: securityapi.SELinuxContextStrategyOptions{
+			Type: securityapi.SELinuxStrategyRunAsAny,
 		},
-		FSGroup: securityv1.FSGroupStrategyOptions{
-			Type: securityv1.FSGroupStrategyRunAsAny,
+		FSGroup: securityapi.FSGroupStrategyOptions{
+			Type: securityapi.FSGroupStrategyRunAsAny,
 		},
-		SupplementalGroups: securityv1.SupplementalGroupsStrategyOptions{
-			Type: securityv1.SupplementalGroupsStrategyRunAsAny,
+		SupplementalGroups: securityapi.SupplementalGroupsStrategyOptions{
+			Type: securityapi.SupplementalGroupsStrategyRunAsAny,
 		},
 		Users:  []string{"user"},
 		Groups: []string{"group"},

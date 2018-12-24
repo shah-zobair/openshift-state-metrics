@@ -9,59 +9,59 @@ import (
 func TestNewIPFailoverConfiguratorPlugin(t *testing.T) {
 	tests := []struct {
 		Name             string
-		Options          *ipfailover.IPFailoverConfigOptions
+		Options          *ipfailover.IPFailoverConfigCmdOptions
 		ErrorExpectation bool
 	}{
 		{
 			Name:             "selector",
-			Options:          &ipfailover.IPFailoverConfigOptions{Selector: "ipfailover=test-nodes"},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{Selector: "ipfailover=test-nodes"},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "empty-selector",
-			Options:          &ipfailover.IPFailoverConfigOptions{Selector: ""},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{Selector: ""},
 			ErrorExpectation: false,
 		},
 		{
 			Name: "vips",
-			Options: &ipfailover.IPFailoverConfigOptions{
+			Options: &ipfailover.IPFailoverConfigCmdOptions{
 				VirtualIPs: "1.2.3.4,5.6.7.8-10,11.0.0.12",
 			},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "empty-vips",
-			Options:          &ipfailover.IPFailoverConfigOptions{VirtualIPs: ""},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{VirtualIPs: ""},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "interface",
-			Options:          &ipfailover.IPFailoverConfigOptions{NetworkInterface: "eth0"},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{NetworkInterface: "eth0"},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "empty-interface",
-			Options:          &ipfailover.IPFailoverConfigOptions{NetworkInterface: ""},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{NetworkInterface: ""},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "watch-port",
-			Options:          &ipfailover.IPFailoverConfigOptions{WatchPort: 999},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{WatchPort: 999},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "replicas",
-			Options:          &ipfailover.IPFailoverConfigOptions{Replicas: 2},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{Replicas: 2},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "vrid-base",
-			Options:          &ipfailover.IPFailoverConfigOptions{VRRPIDOffset: 30},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{VRRPIDOffset: 30},
 			ErrorExpectation: false,
 		},
 		{
 			Name: "all-options",
-			Options: &ipfailover.IPFailoverConfigOptions{
+			Options: &ipfailover.IPFailoverConfigCmdOptions{
 				Selector:         "ipf=v1",
 				VirtualIPs:       "9.8.7.6,5.4.3.2-5",
 				NetworkInterface: "ipf0",
@@ -73,12 +73,12 @@ func TestNewIPFailoverConfiguratorPlugin(t *testing.T) {
 		},
 		{
 			Name:             "no-options",
-			Options:          &ipfailover.IPFailoverConfigOptions{},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{},
 			ErrorExpectation: false,
 		},
 		{
 			Name:             "", // empty
-			Options:          &ipfailover.IPFailoverConfigOptions{},
+			Options:          &ipfailover.IPFailoverConfigCmdOptions{},
 			ErrorExpectation: false,
 		},
 	}
@@ -139,7 +139,7 @@ func TestPluginGetWatchPort(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		options := &ipfailover.IPFailoverConfigOptions{WatchPort: tc.WatchPort}
+		options := &ipfailover.IPFailoverConfigCmdOptions{WatchPort: tc.WatchPort}
 		p, err := NewIPFailoverConfiguratorPlugin(tc.Name, nil, options)
 		if err != nil {
 			t.Errorf("Error creating IPFailoverConfigurator plugin - test=%q, error: %v", tc.Name, err)
@@ -182,7 +182,7 @@ func TestPluginGetSelector(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		options := &ipfailover.IPFailoverConfigOptions{Selector: tc.Selector}
+		options := &ipfailover.IPFailoverConfigCmdOptions{Selector: tc.Selector}
 		p, err := NewIPFailoverConfiguratorPlugin(tc.Name, nil, options)
 		if err != nil {
 			t.Errorf("Error creating IPFailoverConfigurator plugin - test=%q, error: %v", tc.Name, err)

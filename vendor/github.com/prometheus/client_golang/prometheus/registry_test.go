@@ -209,34 +209,6 @@ metric: <
 	expectedMetricFamilyMergedWithExternalAsProtoCompactText := []byte(`name:"name" help:"docstring" type:COUNTER metric:<label:<name:"constname" value:"constvalue" > label:<name:"labelname" value:"different_val" > counter:<value:42 > > metric:<label:<name:"constname" value:"constvalue" > label:<name:"labelname" value:"val1" > counter:<value:1 > > metric:<label:<name:"constname" value:"constvalue" > label:<name:"labelname" value:"val2" > counter:<value:1 > > 
 `)
 
-	externalMetricFamilyWithInvalidLabelValue := &dto.MetricFamily{
-		Name: proto.String("name"),
-		Help: proto.String("docstring"),
-		Type: dto.MetricType_COUNTER.Enum(),
-		Metric: []*dto.Metric{
-			{
-				Label: []*dto.LabelPair{
-					{
-						Name:  proto.String("constname"),
-						Value: proto.String("\xFF"),
-					},
-					{
-						Name:  proto.String("labelname"),
-						Value: proto.String("different_val"),
-					},
-				},
-				Counter: &dto.Counter{
-					Value: proto.Float64(42),
-				},
-			},
-		},
-	}
-
-	expectedMetricFamilyInvalidLabelValueAsText := []byte(`An error has occurred during metrics gathering:
-
-collected metric's label constname is not utf8: "\xff"
-`)
-
 	type output struct {
 		headers map[string]string
 		body    []byte
@@ -254,7 +226,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: []byte{},
 			},
@@ -265,7 +237,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: []byte{},
 			},
@@ -276,7 +248,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: []byte{},
 			},
@@ -298,7 +270,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: expectedMetricFamilyAsText,
 			},
@@ -322,7 +294,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: externalMetricFamilyAsText,
 			},
@@ -365,7 +337,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: []byte{},
 			},
@@ -376,7 +348,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: expectedMetricFamilyAsText,
 			},
@@ -388,7 +360,7 @@ collected metric's label constname is not utf8: "\xff"
 			},
 			out: output{
 				headers: map[string]string{
-					"Content-Type": `text/plain; version=0.0.4; charset=utf-8`,
+					"Content-Type": `text/plain; version=0.0.4`,
 				},
 				body: bytes.Join(
 					[][]byte{
@@ -478,22 +450,6 @@ collected metric's label constname is not utf8: "\xff"
 			externalMF: []*dto.MetricFamily{
 				externalMetricFamily,
 				externalMetricFamilyWithSameName,
-			},
-		},
-		{ // 16
-			headers: map[string]string{
-				"Accept": "application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=compact-text",
-			},
-			out: output{
-				headers: map[string]string{
-					"Content-Type": `text/plain; charset=utf-8`,
-				},
-				body: expectedMetricFamilyInvalidLabelValueAsText,
-			},
-			collector: metricVec,
-			externalMF: []*dto.MetricFamily{
-				externalMetricFamily,
-				externalMetricFamilyWithInvalidLabelValue,
 			},
 		},
 	}

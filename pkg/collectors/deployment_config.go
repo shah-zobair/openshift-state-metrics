@@ -1,126 +1,217 @@
-/*
-Copyright 2016 The Kubernetes Authors All rights reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package collectors
 
 import (
+	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/version"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/golang/glog"
+
 	"github.com/openshift/api/apps/v1"
 	appsclient "github.com/openshift/client-go/apps/clientset/versioned"
-	informers "github.com/openshift/client-go/apps/informers/externalversions"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/wanghaoran1988/openshift-state-metrics/pkg/options"
-	"github.com/wanghaoran1988/openshift-state-metrics/pkg/version"
-	"golang.org/x/net/context"
 )
 
 var (
-	descDeploymentConfigLabelsName          = "openshift_deploymentconfig_labels"
-	descDeploymentConfigLabelsHelp          = "openshift labels converted to Prometheus labels."
-	descDeploymentConfigLabelsDefaultLabels = []string{"namespace", "deploymentconfig"}
+	descDeploymentLabelsName          = "openshift_deploymentconfig_labels"
+	descDeploymentLabelsHelp          = "Kubernetes labels converted to Prometheus labels."
+	descDeploymentLabelsDefaultLabels = []string{"namespace", "deploymentconfig"}
 
-	descDeploymentConfigCreated = prometheus.NewDesc(
-		"openshift_deploymentconfig_created",
-		"Unix creation timestamp",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+	deploymentMetricFamilies = []metrics.FamilyGenerator{
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_created",
+			Type: metrics.MetricTypeGauge,
+			Help: "Unix creation timestamp",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				f := metrics.Family{}
 
-	descDeploymentConfigStatusReplicas = prometheus.NewDesc(
-		"openshift_deploymentconfig_status_replicas",
-		"The number of replicas per deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
-	descDeploymentConfigStatusReplicasAvailable = prometheus.NewDesc(
-		"openshift_deploymentconfig_status_replicas_available",
-		"The number of available replicas per deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
-	descDeploymentConfigStatusReplicasUnavailable = prometheus.NewDesc(
-		"openshift_deploymentconfig_status_replicas_unavailable",
-		"The number of unavailable replicas per deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
-	descDeploymentConfigStatusReplicasUpdated = prometheus.NewDesc(
-		"openshift_deploymentconfig_status_replicas_updated",
-		"The number of updated replicas per deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+				if !d.CreationTimestamp.IsZero() {
+					f = append(f, &metrics.Metric{
+						Name:  "openshift_deploymentconfig_created",
+						Value: float64(d.CreationTimestamp.Unix()),
+					})
+				}
 
-	descDeploymentConfigStatusObservedGeneration = prometheus.NewDesc(
-		"openshift_deploymentconfig_status_observed_generation",
-		"The generation observed by the deploymentconfig controller.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+				return f
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_status_replicas",
+			Type: metrics.MetricTypeGauge,
+			Help: "The number of replicas per deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_status_replicas",
+					Value: float64(d.Status.Replicas),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_status_replicas_available",
+			Type: metrics.MetricTypeGauge,
+			Help: "The number of available replicas per deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_status_replicas_available",
+					Value: float64(d.Status.AvailableReplicas),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_status_replicas_unavailable",
+			Type: metrics.MetricTypeGauge,
+			Help: "The number of unavailable replicas per deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_status_replicas_unavailable",
+					Value: float64(d.Status.UnavailableReplicas),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_status_replicas_updated",
+			Type: metrics.MetricTypeGauge,
+			Help: "The number of updated replicas per deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_status_replicas_updated",
+					Value: float64(d.Status.UpdatedReplicas),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_status_observed_generation",
+			Type: metrics.MetricTypeGauge,
+			Help: "The generation observed by the deployment controller.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_status_observed_generation",
+					Value: float64(d.Status.ObservedGeneration),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_spec_replicas",
+			Type: metrics.MetricTypeGauge,
+			Help: "Number of desired pods for a deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_spec_replicas",
+					Value: float64(d.Spec.Replicas),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_spec_paused",
+			Type: metrics.MetricTypeGauge,
+			Help: "Whether the deployment is paused and will not be processed by the deployment controller.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_spec_paused",
+					Value: boolFloat64(d.Spec.Paused),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_spec_strategy_rollingupdate_max_unavailable",
+			Type: metrics.MetricTypeGauge,
+			Help: "Maximum number of unavailable replicas during a rolling update of a deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				if d.Spec.Strategy.RollingParams == nil {
+					return metrics.Family{}
+				}
 
-	descDeploymentConfigSpecReplicas = prometheus.NewDesc(
-		"openshift_deploymentconfig_spec_replicas",
-		"Number of desired pods for a deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+				maxUnavailable, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxUnavailable, int(d.Spec.Replicas), true)
+				if err != nil {
+					panic(err)
+				}
 
-	descDeploymentConfigSpecPaused = prometheus.NewDesc(
-		"openshift_deploymentconfig_spec_paused",
-		"Whether the deployment is paused and will not be processed by the deploymentconfig controller.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_spec_strategy_rollingupdate_max_unavailable",
+					Value: float64(maxUnavailable),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_spec_strategy_rollingupdate_max_surge",
+			Type: metrics.MetricTypeGauge,
+			Help: "Maximum number of replicas that can be scheduled above the desired number of replicas during a rolling update of a deployment.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				if d.Spec.Strategy.RollingParams == nil {
+					return metrics.Family{}
+				}
 
-	descDeploymentConfigStrategyRollingUpdateMaxUnavailable = prometheus.NewDesc(
-		"openshift_deploymentconfig_spec_strategy_rollingupdate_max_unavailable",
-		"Maximum number of unavailable replicas during a rolling update of a deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
+				maxSurge, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxSurge, int(d.Spec.Replicas), true)
+				if err != nil {
+					panic(err)
+				}
 
-	descDeploymentConfigStrategyRollingUpdateMaxSurge = prometheus.NewDesc(
-		"openshift_deploymentconfig_spec_strategy_rollingupdate_max_surge",
-		"Maximum number of replicas that can be scheduled above the desired number of replicas during a rolling update of a deploymentconfig.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
-
-	descDeploymentConfigMetadataGeneration = prometheus.NewDesc(
-		"openshift_deploymentconfig_metadata_generation",
-		"Sequence number representing a specific generation of the desired state.",
-		descDeploymentConfigLabelsDefaultLabels,
-		nil,
-	)
-
-	descDeploymentConfigLabels = prometheus.NewDesc(
-		descDeploymentConfigLabelsName,
-		descDeploymentConfigLabelsHelp,
-		descDeploymentConfigLabelsDefaultLabels, nil,
-	)
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_spec_strategy_rollingupdate_max_surge",
+					Value: float64(maxSurge),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: "openshift_deploymentconfig_metadata_generation",
+			Type: metrics.MetricTypeGauge,
+			Help: "Sequence number representing a specific generation of the desired state.",
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				return metrics.Family{&metrics.Metric{
+					Name:  "openshift_deploymentconfig_metadata_generation",
+					Value: float64(d.ObjectMeta.Generation),
+				}}
+			}),
+		},
+		metrics.FamilyGenerator{
+			Name: descDeploymentLabelsName,
+			Type: metrics.MetricTypeGauge,
+			Help: descDeploymentLabelsHelp,
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+				labelKeys, labelValues := kubeLabelsToPrometheusLabels(d.Labels)
+				return metrics.Family{&metrics.Metric{
+					Name:        descDeploymentLabelsName,
+					LabelKeys:   labelKeys,
+					LabelValues: labelValues,
+					Value:       1,
+				}}
+			}),
+		},
+	}
 )
 
-type DeploymentLister func() ([]v1.DeploymentConfig, error)
+func wrapDeploymentFunc(f func(*v1.DeploymentConfig) metrics.Family) func(interface{}) metrics.Family {
+	return func(obj interface{}) metrics.Family {
+		deployment := obj.(*v1.DeploymentConfig)
 
-func (l DeploymentLister) List() ([]v1.DeploymentConfig, error) {
-	return l()
+		metricFamily := f(deployment)
+
+		for _, m := range metricFamily {
+			m.LabelKeys = append(descDeploymentLabelsDefaultLabels, m.LabelKeys...)
+			m.LabelValues = append([]string{deployment.Namespace, deployment.Name}, m.LabelValues...)
+		}
+
+		return metricFamily
+	}
+}
+
+func createDeploymentListWatch(apiserver string, kubeconfig string, ns string) cache.ListWatch {
+	appsclient, err := createAppsClient(apiserver, kubeconfig)
+	if err != nil {
+		glog.Fatalf("cannot create deploymentconfig client:", err)
+	}
+	return cache.ListWatch{
+		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
+			return appsclient.AppsV1().DeploymentConfigs(ns).List(opts)
+		},
+		WatchFunc: func(opts metav1.ListOptions) (watch.Interface, error) {
+			return appsclient.AppsV1().DeploymentConfigs(ns).Watch(opts)
+		},
+	}
 }
 
 func createAppsClient(apiserver string, kubeconfig string) (*appsclient.Clientset, error) {
@@ -135,127 +226,5 @@ func createAppsClient(apiserver string, kubeconfig string) (*appsclient.Clientse
 
 	client, err := appsclient.NewForConfig(config)
 	return client, err
-
-}
-
-func RegisterDeploymentConfigCollector(registry prometheus.Registerer, opts *options.Options) {
-	glog.Info("register deployment config collector")
-	appsclient, err := createAppsClient(opts.Apiserver, opts.Kubeconfig)
-
-	if err != nil {
-		glog.Fatalf("failed :%v", err)
-	}
-
-	infos := []informers.SharedInformerFactory{}
-	for _, ns := range opts.Namespaces {
-		infos = append(infos, informers.NewSharedInformerFactoryWithOptions(appsclient, 0, informers.WithNamespace(ns)))
-	}
-	infs := SharedInformerList{}
-	for _, f := range infos {
-		infs = append(infs, f.Apps().V1().DeploymentConfigs().Informer().(cache.SharedInformer))
-	}
-
-	dplLister := DeploymentLister(func() (deployments []v1.DeploymentConfig, err error) {
-		for _, dinf := range infs {
-			for _, c := range dinf.GetStore().List() {
-				deployments = append(deployments, *(c.(*v1.DeploymentConfig)))
-			}
-		}
-		return deployments, nil
-	})
-
-	registry.MustRegister(&deploymentCollector{store: dplLister, opts: opts})
-	infs.Run(context.Background().Done())
-}
-
-type deploymentStore interface {
-	List() (deployments []v1.DeploymentConfig, err error)
-}
-
-// deploymentCollector collects metrics about all deployments in the cluster.
-type deploymentCollector struct {
-	store deploymentStore
-	opts  *options.Options
-}
-
-// Describe implements the prometheus.Collector interface.
-func (dc *deploymentCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- descDeploymentConfigCreated
-	ch <- descDeploymentConfigStatusReplicas
-	ch <- descDeploymentConfigStatusReplicasAvailable
-	ch <- descDeploymentConfigStatusReplicasUnavailable
-	ch <- descDeploymentConfigStatusReplicasUpdated
-	ch <- descDeploymentConfigStatusObservedGeneration
-	ch <- descDeploymentConfigSpecPaused
-	ch <- descDeploymentConfigStrategyRollingUpdateMaxUnavailable
-	ch <- descDeploymentConfigStrategyRollingUpdateMaxSurge
-	ch <- descDeploymentConfigSpecReplicas
-	ch <- descDeploymentConfigMetadataGeneration
-	ch <- descDeploymentConfigLabels
-}
-
-// Collect implements the prometheus.Collector interface.
-func (dc *deploymentCollector) Collect(ch chan<- prometheus.Metric) {
-	ds, err := dc.store.List()
-	if err != nil {
-		ScrapeErrorTotalMetric.With(prometheus.Labels{"resource": "deploymentconfig"}).Inc()
-		glog.Errorf("listing deployments failed: %s", err)
-		return
-	}
-	ScrapeErrorTotalMetric.With(prometheus.Labels{"resource": "deploymentconfig"}).Add(0)
-
-	ResourcesPerScrapeMetric.With(prometheus.Labels{"resource": "deploymentconfig"}).Observe(float64(len(ds)))
-	for _, d := range ds {
-		dc.collectDeploymentConfig(ch, d)
-	}
-
-	glog.V(4).Infof("collected %d deploymentconfigs", len(ds))
-}
-
-func deploymentLabelsDesc(labelKeys []string) *prometheus.Desc {
-	return prometheus.NewDesc(
-		descDeploymentConfigLabelsName,
-		descDeploymentConfigLabelsHelp,
-		append(descDeploymentConfigLabelsDefaultLabels, labelKeys...),
-		nil,
-	)
-}
-
-func (dc *deploymentCollector) collectDeploymentConfig(ch chan<- prometheus.Metric, d v1.DeploymentConfig) {
-	addGauge := func(desc *prometheus.Desc, v float64, lv ...string) {
-		lv = append([]string{d.Namespace, d.Name}, lv...)
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, v, lv...)
-	}
-	labelKeys, labelValues := kubeLabelsToPrometheusLabels(d.Labels)
-	addGauge(deploymentLabelsDesc(labelKeys), 1, labelValues...)
-	if !d.CreationTimestamp.IsZero() {
-		addGauge(descDeploymentConfigCreated, float64(d.CreationTimestamp.Unix()))
-	}
-	addGauge(descDeploymentConfigStatusReplicas, float64(d.Status.Replicas))
-	addGauge(descDeploymentConfigStatusReplicasAvailable, float64(d.Status.AvailableReplicas))
-	addGauge(descDeploymentConfigStatusReplicasUnavailable, float64(d.Status.UnavailableReplicas))
-	addGauge(descDeploymentConfigStatusReplicasUpdated, float64(d.Status.UpdatedReplicas))
-	addGauge(descDeploymentConfigStatusObservedGeneration, float64(d.Status.ObservedGeneration))
-	addGauge(descDeploymentConfigSpecPaused, boolFloat64(d.Spec.Paused))
-	addGauge(descDeploymentConfigSpecReplicas, float64(d.Spec.Replicas))
-	addGauge(descDeploymentConfigMetadataGeneration, float64(d.ObjectMeta.Generation))
-
-	if d.Spec.Strategy.RollingParams == nil {
-		return
-	}
-
-	maxUnavailable, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxUnavailable, int(d.Spec.Replicas), true)
-	if err != nil {
-		glog.Errorf("Error converting RollingUpdate MaxUnavailable to int: %s", err)
-	} else {
-		addGauge(descDeploymentConfigStrategyRollingUpdateMaxUnavailable, float64(maxUnavailable))
-	}
-
-	maxSurge, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxSurge, int(d.Spec.Replicas), true)
-	if err != nil {
-		glog.Errorf("Error converting RollingUpdate MaxSurge to int: %s", err)
-	} else {
-		addGauge(descDeploymentConfigStrategyRollingUpdateMaxSurge, float64(maxSurge))
-	}
 
 }

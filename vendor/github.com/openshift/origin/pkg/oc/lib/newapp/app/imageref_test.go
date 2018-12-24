@@ -5,11 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
+	kapi "k8s.io/kubernetes/pkg/apis/core"
 
-	appsv1 "github.com/openshift/api/apps/v1"
-	buildv1 "github.com/openshift/api/build/v1"
-	imagev1 "github.com/openshift/api/image/v1"
+	appsapi "github.com/openshift/origin/pkg/apps/apis/apps"
+	buildapi "github.com/openshift/origin/pkg/build/apis/build"
 	imageapi "github.com/openshift/origin/pkg/image/apis/image"
 	"github.com/openshift/origin/pkg/oc/lib/newapp"
 	"github.com/openshift/source-to-image/pkg/scm/git"
@@ -37,18 +36,18 @@ func TestBuildConfigOutput(t *testing.T) {
 	}
 	tests := []struct {
 		asImageStream bool
-		want          *corev1.ObjectReference
+		want          *kapi.ObjectReference
 	}{
 		{
 			asImageStream: true,
-			want: &corev1.ObjectReference{
+			want: &kapi.ObjectReference{
 				Kind: "ImageStreamTag",
 				Name: "origin:latest",
 			},
 		},
 		{
 			asImageStream: false,
-			want: &corev1.ObjectReference{
+			want: &kapi.ObjectReference{
 				Kind: "DockerImage",
 				Name: "myregistry/openshift/origin",
 			},
@@ -74,7 +73,7 @@ func TestBuildConfigOutput(t *testing.T) {
 		}
 		imageChangeTrigger := false
 		for _, trigger := range config.Spec.Triggers {
-			if trigger.Type == buildv1.ImageChangeBuildTriggerType {
+			if trigger.Type == buildapi.ImageChangeBuildTriggerType {
 				imageChangeTrigger = true
 				if trigger.ImageChange == nil {
 					t.Errorf("(%d) invalid image change trigger found: %#v", i, trigger)
@@ -106,7 +105,7 @@ func TestSimpleDeploymentConfig(t *testing.T) {
 		t.Errorf("unexpected value: %#v", config)
 	}
 	for _, trigger := range config.Spec.Triggers {
-		if trigger.Type == appsv1.DeploymentTriggerOnImageChange {
+		if trigger.Type == appsapi.DeploymentTriggerOnImageChange {
 			from := trigger.ImageChangeParams.From
 			if from.Kind != "ImageStreamTag" {
 				t.Errorf("unexpected from.kind in image change trigger: %s", from.Kind)
@@ -230,7 +229,7 @@ func TestImageRefDeployableContainerPorts(t *testing.T) {
 				t.Errorf("%s: got unexpected port: %v", test.name, port)
 				continue
 			}
-			if corev1.Protocol(proto) != port.Protocol {
+			if kapi.Protocol(proto) != port.Protocol {
 				t.Errorf("%s: got unexpected protocol %s for port %v", test.name, port.Protocol, port)
 			}
 			delete(remaining, int(port.ContainerPort))
@@ -264,8 +263,8 @@ func TestFromName(t *testing.T) {
 
 func TestFromStream(t *testing.T) {
 	g := NewImageRefGenerator()
-	repo := imagev1.ImageStream{
-		Status: imagev1.ImageStreamStatus{
+	repo := imageapi.ImageStream{
+		Status: imageapi.ImageStreamStatus{
 			DockerImageRepository: "my.registry:5000/test/image",
 		},
 	}

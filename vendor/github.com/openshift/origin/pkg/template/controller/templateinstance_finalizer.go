@@ -28,8 +28,11 @@ import (
 	templatelister "github.com/openshift/client-go/template/listers/template/v1"
 )
 
-// TemplateInstanceFinalizerController watches for deletion of TemplateInstance objects
-// and handles the cleanup of the associated resources before removing the finalizer.
+// TemplateInstanceFinalizerController watches for new TemplateInstance objects and
+// instantiates the template contained within, using parameters read from a
+// linked Secret object.  The TemplateInstanceFinalizerController instantiates objects
+// using its own service account, first verifying that the requester also has
+// permissions to instantiate.
 type TemplateInstanceFinalizerController struct {
 	dynamicRestMapper meta.RESTMapper
 	client            dynamic.Interface

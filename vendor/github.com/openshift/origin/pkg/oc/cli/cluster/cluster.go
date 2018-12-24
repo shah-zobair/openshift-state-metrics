@@ -9,6 +9,7 @@ import (
 	kcmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 
+	"github.com/openshift/origin/pkg/oc/clusteradd"
 	"github.com/openshift/origin/pkg/oc/clusterup"
 )
 
@@ -27,7 +28,8 @@ var (
 		To use an existing Docker connection, ensure that Docker commands are working and that you
 		can create new containers.
 
-		Default routes are setup using nip.io and the host ip of your cluster.`)
+		Default routes are setup using nip.io and the host ip of your cluster. To use a different
+		routing suffix, use the --routing-suffix flag.`)
 )
 
 func NewCmdCluster(name, fullName string, f kcmdutil.Factory, streams genericclioptions.IOStreams) *cobra.Command {
@@ -39,7 +41,9 @@ func NewCmdCluster(name, fullName string, f kcmdutil.Factory, streams genericcli
 		Run:   kcmdutil.DefaultSubCommandRun(streams.ErrOut),
 	}
 
-	cmds.AddCommand(clusterup.NewCmdUp(clusterup.CmdUpRecommendedName, fullName+" "+clusterup.CmdUpRecommendedName, f, streams))
+	clusterAdd := clusteradd.NewCmdAdd(clusteradd.CmdAddRecommendedName, fullName+" "+clusteradd.CmdAddRecommendedName, streams)
+	cmds.AddCommand(clusterAdd)
+	cmds.AddCommand(clusterup.NewCmdUp(clusterup.CmdUpRecommendedName, fullName+" "+clusterup.CmdUpRecommendedName, f, streams, clusterAdd))
 	cmds.AddCommand(clusterup.NewCmdDown(clusterup.CmdDownRecommendedName, fullName+" "+clusterup.CmdDownRecommendedName))
 	cmds.AddCommand(clusterup.NewCmdStatus(clusterup.CmdStatusRecommendedName, fullName+" "+clusterup.CmdStatusRecommendedName, f, streams))
 	return cmds

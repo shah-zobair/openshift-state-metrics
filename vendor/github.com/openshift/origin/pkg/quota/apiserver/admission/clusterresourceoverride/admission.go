@@ -66,8 +66,6 @@ type clusterResourceOverridePlugin struct {
 var _ = oadmission.WantsProjectCache(&clusterResourceOverridePlugin{})
 var _ = kadmission.WantsInternalKubeInformerFactory(&clusterResourceOverridePlugin{})
 var _ = kadmission.WantsInternalKubeClientSet(&clusterResourceOverridePlugin{})
-var _ = admission.MutationInterface(&clusterResourceOverridePlugin{})
-var _ = admission.ValidationInterface(&clusterResourceOverridePlugin{})
 
 // newClusterResourceOverride returns an admission controller for containers that
 // configurably overrides container resource request/limits
@@ -153,16 +151,8 @@ func isExemptedNamespace(name string) bool {
 	return false
 }
 
-func (a *clusterResourceOverridePlugin) Admit(attr admission.Attributes) error {
-	return a.admit(attr, true)
-}
-
-func (a *clusterResourceOverridePlugin) Validate(attr admission.Attributes) error {
-	return a.admit(attr, false)
-}
-
 // TODO this will need to update when we have pod requests/limits
-func (a *clusterResourceOverridePlugin) admit(attr admission.Attributes, mutationAllowed bool) error {
+func (a *clusterResourceOverridePlugin) Admit(attr admission.Attributes) error {
 	glog.V(6).Infof("%s admission controller is invoked", api.PluginName)
 	if a.config == nil || attr.GetResource().GroupResource() != kapi.Resource("pods") || attr.GetSubresource() != "" {
 		return nil // not applicable
@@ -214,20 +204,16 @@ func (a *clusterResourceOverridePlugin) admit(attr admission.Attributes, mutatio
 	}
 	glog.V(5).Infof("%s: pod limits after LimitRanger: %#v", api.PluginName, pod.Spec)
 	for i := range pod.Spec.InitContainers {
-		if err := updateContainerResources(a.config, &pod.Spec.InitContainers[i], nsCPUFloor, nsMemFloor, mutationAllowed); err != nil {
-			return admission.NewForbidden(attr, fmt.Errorf("spec.initContainers[%d].%v", i, err))
-		}
+		updateContainerResources(a.config, &pod.Spec.InitContainers[i], nsCPUFloor, nsMemFloor)
 	}
 	for i := range pod.Spec.Containers {
-		if err := updateContainerResources(a.config, &pod.Spec.Containers[i], nsCPUFloor, nsMemFloor, mutationAllowed); err != nil {
-			return admission.NewForbidden(attr, fmt.Errorf("spec.containers[%d].%v", i, err))
-		}
+		updateContainerResources(a.config, &pod.Spec.Containers[i], nsCPUFloor, nsMemFloor)
 	}
 	glog.V(5).Infof("%s: pod limits after overrides are: %#v", api.PluginName, pod.Spec)
 	return nil
 }
 
-func updateContainerResources(config *internalConfig, container *kapi.Container, nsCPUFloor, nsMemFloor *resource.Quantity, mutationAllowed bool) error {
+func updateContainerResources(config *internalConfig, container *kapi.Container, nsCPUFloor, nsMemFloor *resource.Quantity) {
 	resources := container.Resources
 	memLimit, memFound := resources.Limits[kapi.ResourceMemory]
 	if memFound && config.memoryRequestToLimitRatio != 0 {
@@ -253,9 +239,7 @@ func updateContainerResources(config *internalConfig, container *kapi.Container,
 			glog.V(5).Infof("%s: %s pod limit %q below namespace limit; setting limit to %q", api.PluginName, kapi.ResourceMemory, q.String(), nsMemFloor.String())
 			q = nsMemFloor.Copy()
 		}
-		if err := applyQuantity(resources.Requests, kapi.ResourceMemory, *q, mutationAllowed); err != nil {
-			return fmt.Errorf("resources.requests.%s %v", kapi.ResourceMemory, err)
-		}
+		resources.Requests[kapi.ResourceMemory] = *q
 	}
 	if memFound && config.limitCPUToMemoryRatio != 0 {
 		amount := float64(memLimit.Value()) * config.limitCPUToMemoryRatio * cpuBaseScaleFactor
@@ -267,9 +251,7 @@ func updateContainerResources(config *internalConfig, container *kapi.Container,
 			glog.V(5).Infof("%s: %s pod limit %q below namespace limit; setting limit to %q", api.PluginName, kapi.ResourceCPU, q.String(), nsCPUFloor.String())
 			q = nsCPUFloor.Copy()
 		}
-		if err := applyQuantity(resources.Limits, kapi.ResourceCPU, *q, mutationAllowed); err != nil {
-			return fmt.Errorf("resources.limits.%s %v", kapi.ResourceCPU, err)
-		}
+		resources.Limits[kapi.ResourceCPU] = *q
 	}
 
 	cpuLimit, cpuFound := resources.Limits[kapi.ResourceCPU]
@@ -283,27 +265,8 @@ func updateContainerResources(config *internalConfig, container *kapi.Container,
 			glog.V(5).Infof("%s: %s pod limit %q below namespace limit; setting limit to %q", api.PluginName, kapi.ResourceCPU, q.String(), nsCPUFloor.String())
 			q = nsCPUFloor.Copy()
 		}
-		if err := applyQuantity(resources.Requests, kapi.ResourceCPU, *q, mutationAllowed); err != nil {
-			return fmt.Errorf("resources.requests.%s %v", kapi.ResourceCPU, err)
-		}
+		resources.Requests[kapi.ResourceCPU] = *q
 	}
-
-	return nil
-}
-
-func applyQuantity(l kapi.ResourceList, r kapi.ResourceName, v resource.Quantity, mutationAllowed bool) error {
-	if mutationAllowed {
-		l[r] = v
-		return nil
-	}
-
-	if oldValue, ok := l[r]; !ok {
-		return fmt.Errorf("mutated, expected: %v, now absent", v)
-	} else if oldValue.Cmp(v) != 0 {
-		return fmt.Errorf("mutated, expected: %v, got %v", v, oldValue)
-	}
-
-	return nil
 }
 
 // minResourceLimits finds the Min limit for resourceName. Nil is

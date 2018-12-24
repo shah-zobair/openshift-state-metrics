@@ -50,7 +50,6 @@ var _ = WantsJenkinsPipelineConfig(&jenkinsBootstrapper{})
 var _ = oadmission.WantsRESTClientConfig(&jenkinsBootstrapper{})
 var _ = kadmission.WantsInternalKubeClientSet(&jenkinsBootstrapper{})
 var _ = kadmission.WantsRESTMapper(&jenkinsBootstrapper{})
-var _ = admission.ValidationInterface(&jenkinsBootstrapper{})
 
 // NewJenkinsBootstrapper returns an admission plugin that will create required jenkins resources as the user if they are needed.
 func NewJenkinsBootstrapper() admission.Interface {
@@ -59,7 +58,7 @@ func NewJenkinsBootstrapper() admission.Interface {
 	}
 }
 
-func (a *jenkinsBootstrapper) Validate(attributes admission.Attributes) error {
+func (a *jenkinsBootstrapper) Admit(attributes admission.Attributes) error {
 	if a.jenkinsConfig.AutoProvisionEnabled != nil && !*a.jenkinsConfig.AutoProvisionEnabled {
 		return nil
 	}
