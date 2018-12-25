@@ -10,5 +10,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: openshift-state-metrics
-  namespace: kube-system
+  namespace: openshift-monitoring
 
