@@ -1,14 +1,14 @@
 package collectors
 
 import (
-	"k8s.io/kube-state-metrics/pkg/metrics"
-	"k8s.io/kube-state-metrics/pkg/version"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/version"
 
 	"github.com/golang/glog"
 
@@ -202,7 +202,7 @@ func wrapDeploymentFunc(f func(*v1.DeploymentConfig) metrics.Family) func(interf
 func createDeploymentListWatch(apiserver string, kubeconfig string, ns string) cache.ListWatch {
 	appsclient, err := createAppsClient(apiserver, kubeconfig)
 	if err != nil {
-		glog.Fatalf("cannot create deploymentconfig client:", err)
+		glog.Fatalf("cannot create deploymentconfig client: %v", err)
 	}
 	return cache.ListWatch{
 		ListFunc: func(opts metav1.ListOptions) (runtime.Object, error) {
