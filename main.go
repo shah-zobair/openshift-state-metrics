@@ -64,7 +64,7 @@ func main() {
 	collectorBuilder.WithApiserver(opts.Apiserver).WithKubeConfig(opts.Kubeconfig)
 	if len(opts.Collectors) == 0 {
 		glog.Info("Using default collectors")
-		collectorBuilder.WithEnabledCollectors(options.DefaultCollectors.AsSlice())
+		collectorBuilder.WithEnabledCollectors(koptions.DefaultCollectors.AsSlice())
 	} else {
 		collectorBuilder.WithEnabledCollectors(opts.Collectors.AsSlice())
 	}
