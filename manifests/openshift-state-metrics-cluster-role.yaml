@@ -8,3 +8,8 @@ rules:
   resources:
   - deploymentconfigs
   verbs: ["list", "watch"]
+- apiGroups: ["build.openshift.io"]
+  resources:
+  - buildconfigs
+  - builds
+  verbs: ["list", "watch"]
