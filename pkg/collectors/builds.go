@@ -83,7 +83,7 @@ var (
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
 				f := metrics.Family{}
 
-				if !b.CreationTimestamp.IsZero() {
+				if !b.CreationTimestamp.IsZero() && b.Status.StartTimestamp != nil {
 					f = append(f, &metrics.Metric{
 						Name:  "openshift_build_started",
 						Value: float64(b.Status.StartTimestamp.Unix()),
@@ -100,7 +100,7 @@ var (
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
 				f := metrics.Family{}
 
-				if !b.CreationTimestamp.IsZero() {
+				if !b.CreationTimestamp.IsZero() && b.Status.CompletionTimestamp != nil {
 					f = append(f, &metrics.Metric{
 						Name:  "openshift_build_complete",
 						Value: float64(b.Status.CompletionTimestamp.Unix()),
@@ -113,11 +113,11 @@ var (
 		metrics.FamilyGenerator{
 			Name: "openshift_build_duration",
 			Type: metrics.MetricTypeGauge,
-			Help: "Started time of the build",
+			Help: "duration time of the build",
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
 				f := metrics.Family{}
 
-				if !b.CreationTimestamp.IsZero() {
+				if !b.CreationTimestamp.IsZero() && b.Status.Duration != 0 {
 					f = append(f, &metrics.Metric{
 						Name:  "openshift_build_duration",
 						Value: float64(b.Status.Duration),
