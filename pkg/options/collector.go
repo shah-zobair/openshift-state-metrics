@@ -11,13 +11,15 @@ func init() {
 	koptions.DefaultCollectors["deploymentConfigs"] = struct{}{}
 	koptions.DefaultCollectors["buildconfigs"] = struct{}{}
 	koptions.DefaultCollectors["builds"] = struct{}{}
+	koptions.DefaultCollectors["clusterresourcequotas"] = struct{}{}
 }
 
 var (
 	DefaultNamespaces = koptions.NamespaceList{metav1.NamespaceAll}
 	DefaultCollectors = koptions.CollectorSet{
-		"deploymentConfigs": struct{}{},
-		"buildconfigs":      struct{}{},
-		"builds":            struct{}{},
+		"deploymentConfigs":     struct{}{},
+		"buildconfigs":          struct{}{},
+		"builds":                struct{}{},
+		"clusterresourcequotas": struct{}{},
 	}
 )

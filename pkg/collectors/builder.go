@@ -28,10 +28,10 @@ import (
 
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/golang/glog"
 	appsv1 "github.com/openshift/api/apps/v1"
 	buildv1 "github.com/openshift/api/build/v1"
-
-	"github.com/golang/glog"
+	quotav1 "github.com/openshift/api/quota/v1"
 	"golang.org/x/net/context"
 )
 
@@ -123,9 +123,10 @@ func (b *Builder) Build() []*collectors.Collector {
 }
 
 var availableCollectors = map[string]func(f *Builder) *collectors.Collector{
-	"deploymentConfigs": func(b *Builder) *collectors.Collector { return b.buildDeploymentCollector() },
-	"buildconfigs":      func(b *Builder) *collectors.Collector { return b.buildBuildConfigCollector() },
-	"builds":      func(b *Builder) *collectors.Collector { return b.buildBuildCollector() },
+	"deploymentConfigs":     func(b *Builder) *collectors.Collector { return b.buildDeploymentCollector() },
+	"buildconfigs":          func(b *Builder) *collectors.Collector { return b.buildBuildConfigCollector() },
+	"builds":                func(b *Builder) *collectors.Collector { return b.buildBuildCollector() },
+	"clusterresourcequotas": func(b *Builder) *collectors.Collector { return b.buildQuotaCollector() },
 }
 
 func extractMetricFamilyHeaders(families []metrics.FamilyGenerator) []string {
@@ -214,6 +215,22 @@ func (b *Builder) buildBuildCollector() *collectors.Collector {
 	)
 	reflectorPerNamespace(b.ctx, &buildv1.Build{}, store,
 		b.apiserver, b.kubeconfig, b.namespaces, createBuildListWatch)
+
+	return collectors.NewCollector(store)
+}
+
+func (b *Builder) buildQuotaCollector() *collectors.Collector {
+	filteredMetricFamilies := filterMetricFamilies(b.whiteBlackList, quotaMetricFamilies)
+	composedMetricGenFuncs := composeMetricGenFuncs(filteredMetricFamilies)
+
+	familyHeaders := extractMetricFamilyHeaders(filteredMetricFamilies)
+
+	store := metricsstore.NewMetricsStore(
+		familyHeaders,
+		composedMetricGenFuncs,
+	)
+	reflectorPerNamespace(b.ctx, &quotav1.ClusterResourceQuota{}, store,
+		b.apiserver, b.kubeconfig, b.namespaces, createClusterResourceQuotaListWatch)
 
 	return collectors.NewCollector(store)
 }

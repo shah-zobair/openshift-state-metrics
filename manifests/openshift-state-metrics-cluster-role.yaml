@@ -13,3 +13,7 @@ rules:
   - buildconfigs
   - builds
   verbs: ["list", "watch"]
+- apiGroups: ["quota.openshift.io"]
+  resources:
+  - clusterresourcequota
+  verbs: ["list", "watch"]
