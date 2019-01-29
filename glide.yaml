@@ -30,6 +30,8 @@ import:
   - context
 - package: k8s.io/kube-state-metrics
   subpackages:
-  - pkg/collectors
+  - pkg/collector
   - pkg/options
   - pkg/whiteblacklist
+  - pkg/version
+  - pkg/metric

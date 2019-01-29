@@ -5,7 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/metric"
 
 	"github.com/golang/glog"
 
@@ -17,126 +17,130 @@ var (
 	descBuildLabelsHelp          = "Kubernetes labels converted to Prometheus labels."
 	descBuildLabelsDefaultLabels = []string{"namespace", "build"}
 
-	buildMetricFamilies = []metrics.FamilyGenerator{
-		metrics.FamilyGenerator{
+	buildMetricFamilies = []metric.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_created",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Unix creation timestamp",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				f := metrics.Family{}
-
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
+				value := float64(0)
 				if !b.CreationTimestamp.IsZero() {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_build_created",
-						Value: float64(b.CreationTimestamp.Unix()),
-					})
+					value = float64(b.CreationTimestamp.Unix())
 				}
-
-				return f
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: value,
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_metadata_generation",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Sequence number representing a specific generation of the desired state.",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_build_metadata_generation",
-					Value: float64(b.ObjectMeta.Generation),
-				}}
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: float64(b.ObjectMeta.Generation),
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: descBuildLabelsName,
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: descBuildLabelsHelp,
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
 				labelKeys, labelValues := kubeLabelsToPrometheusLabels(b.Labels)
-				return metrics.Family{&metrics.Metric{
-					Name:        descBuildLabelsName,
-					LabelKeys:   labelKeys,
-					LabelValues: labelValues,
-					Value:       1,
-				}}
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							LabelKeys:   labelKeys,
+							LabelValues: labelValues,
+							Value:       1,
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_status_phase",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The build phase.",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				f := metrics.Family{}
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
 				ms := addBuildPahseMetrics(b.Status.Phase)
-				for _, m := range ms {
-					metric := m
-					metric.Name = "openshift_build_status_phase"
-					metric.LabelKeys = []string{"build_phase"}
-					f = append(f, metric)
+				return metric.Family{
+					Metrics: ms,
 				}
-				return f
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_started",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Started time of the build",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				f := metrics.Family{}
-
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
+				value := float64(0)
 				if !b.CreationTimestamp.IsZero() && b.Status.StartTimestamp != nil {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_build_started",
-						Value: float64(b.Status.StartTimestamp.Unix()),
-					})
+					value = float64(b.Status.StartTimestamp.Unix())
 				}
-
-				return f
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: value,
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_complete",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Started time of the build",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				f := metrics.Family{}
-
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
+				value := float64(0)
 				if !b.CreationTimestamp.IsZero() && b.Status.CompletionTimestamp != nil {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_build_complete",
-						Value: float64(b.Status.CompletionTimestamp.Unix()),
-					})
+					value = float64(b.Status.CompletionTimestamp.Unix())
 				}
-
-				return f
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: value,
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_build_duration",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "duration time of the build",
-			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metrics.Family {
-				f := metrics.Family{}
+			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
+				f := metric.Family{}
 
 				if !b.CreationTimestamp.IsZero() && b.Status.Duration != 0 {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_build_duration",
-						Value: float64(b.Status.Duration),
-					})
+					f.Metrics = []*metric.Metric{
+						{
+							Value: float64(b.Status.Duration),
+						},
+					}
 				}
-
 				return f
 			}),
 		},
 	}
 )
 
-func wrapBuildFunc(f func(config *v1.Build) metrics.Family) func(interface{}) metrics.Family {
-	return func(obj interface{}) metrics.Family {
+func wrapBuildFunc(f func(config *v1.Build) metric.Family) func(interface{}) metric.Family {
+	return func(obj interface{}) metric.Family {
 		build := obj.(*v1.Build)
 
 		metricFamily := f(build)
 
-		for _, m := range metricFamily {
+		for _, m := range metricFamily.Metrics {
 			m.LabelKeys = append(descBuildLabelsDefaultLabels, m.LabelKeys...)
 			m.LabelValues = append([]string{build.Namespace, build.Name}, m.LabelValues...)
 		}
@@ -163,35 +167,42 @@ func createBuildListWatch(apiserver string, kubeconfig string, ns string) cache.
 // addConditionMetrics generates one metric for each possible node condition
 // status. For this function to work properly, the last label in the metric
 // description must be the condition.
-func addBuildPahseMetrics(cs v1.BuildPhase) []*metrics.Metric {
-	return []*metrics.Metric{
-		&metrics.Metric{
+func addBuildPahseMetrics(cs v1.BuildPhase) []*metric.Metric {
+	return []*metric.Metric{
+		&metric.Metric{
 			LabelValues: []string{"complete"},
 			Value:       boolFloat64(cs == v1.BuildPhaseComplete),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"cancelled"},
 			Value:       boolFloat64(cs == v1.BuildPhaseCancelled),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"new"},
 			Value:       boolFloat64(cs == v1.BuildPhaseNew),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"pending"},
 			Value:       boolFloat64(cs == v1.BuildPhasePending),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"running"},
 			Value:       boolFloat64(cs == v1.BuildPhaseRunning),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"failed"},
 			Value:       boolFloat64(cs == v1.BuildPhaseFailed),
+			LabelKeys:   []string{"build_phase"},
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"error"},
 			Value:       boolFloat64(cs == v1.BuildPhaseError),
+			LabelKeys:   []string{"build_phase"},
 		},
 	}
 }

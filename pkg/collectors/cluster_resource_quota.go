@@ -6,7 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/metric"
 
 	"github.com/golang/glog"
 	"github.com/openshift/api/quota/v1"
@@ -19,60 +19,58 @@ var (
 	descClusterResourceQuotaLabelsHelp          = "Kubernetes labels converted to Prometheus labels."
 	descClusterResourceQuotaLabelsDefaultLabels = []string{"name"}
 
-	quotaMetricFamilies = []metrics.FamilyGenerator{
-		metrics.FamilyGenerator{
+	quotaMetricFamilies = []metric.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_clusterresourcequota_created",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Unix creation timestamp",
-			GenerateFunc: wrapClusterResourceQuotaFunc(func(b *v1.ClusterResourceQuota) metrics.Family {
-				f := metrics.Family{}
-
+			GenerateFunc: wrapClusterResourceQuotaFunc(func(b *v1.ClusterResourceQuota) metric.Family {
+				f := metric.Family{}
 				if !b.CreationTimestamp.IsZero() {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_clusterresourcequota_created",
+					f.Metrics = append(f.Metrics, &metric.Metric{
 						Value: float64(b.CreationTimestamp.Unix()),
 					})
 				}
-
 				return f
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: descClusterResourceQuotaLabelsHelp,
-			GenerateFunc: wrapClusterResourceQuotaFunc(func(quota *v1.ClusterResourceQuota) metrics.Family {
+			GenerateFunc: wrapClusterResourceQuotaFunc(func(quota *v1.ClusterResourceQuota) metric.Family {
 				labelKeys, labelValues := kubeLabelsToPrometheusLabels(quota.Labels)
-				return metrics.Family{&metrics.Metric{
-					Name:        descClusterResourceQuotaLabelsName,
-					LabelKeys:   labelKeys,
-					LabelValues: labelValues,
-					Value:       1,
-				}}
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							LabelKeys:   labelKeys,
+							LabelValues: labelValues,
+							Value:       1,
+						},
+					}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_clusterresourcequota",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Information about resource quota.",
-			GenerateFunc: wrapClusterResourceQuotaFunc(func(r *v1.ClusterResourceQuota) metrics.Family {
-				f := metrics.Family{}
+			GenerateFunc: wrapClusterResourceQuotaFunc(func(r *v1.ClusterResourceQuota) metric.Family {
+				f := metric.Family{}
 
 				for res, qty := range r.Status.Total.Hard {
-					f = append(f, &metrics.Metric{
+					f.Metrics = append(f.Metrics, &metric.Metric{
 						LabelValues: []string{string(res), "hard"},
 						Value:       float64(qty.MilliValue()) / 1000,
 					})
 				}
 				for res, qty := range r.Status.Total.Used {
-					f = append(f, &metrics.Metric{
+					f.Metrics = append(f.Metrics, &metric.Metric{
 						LabelValues: []string{string(res), "used"},
 						Value:       float64(qty.MilliValue()) / 1000,
 					})
 				}
 
-				for _, m := range f {
-					m.Name = "openshift_clusterresourcequota"
+				for _, m := range f.Metrics {
 					m.LabelKeys = []string{"resource", "type"}
 				}
 
@@ -82,13 +80,13 @@ var (
 	}
 )
 
-func wrapClusterResourceQuotaFunc(f func(config *v1.ClusterResourceQuota) metrics.Family) func(interface{}) metrics.Family {
-	return func(obj interface{}) metrics.Family {
+func wrapClusterResourceQuotaFunc(f func(config *v1.ClusterResourceQuota) metric.Family) func(interface{}) metric.Family {
+	return func(obj interface{}) metric.Family {
 		quota := obj.(*v1.ClusterResourceQuota)
 
 		metricFamily := f(quota)
 
-		for _, m := range metricFamily {
+		for _, m := range metricFamily.Metrics {
 			m.LabelKeys = append(descClusterResourceQuotaLabelsDefaultLabels, m.LabelKeys...)
 			m.LabelValues = append([]string{quota.Name}, m.LabelValues...)
 		}

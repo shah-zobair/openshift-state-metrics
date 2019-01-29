@@ -8,18 +8,21 @@ BuildDate = $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
 Commit = $(shell git rev-parse --short HEAD)
 ALL_ARCH = amd64 arm arm64 ppc64le s390x
 PKG=k8s.io/kube-state-metrics/pkg
-GO_VERSION=1.11.2
+GO_VERSION=1.11.5
+FIRST_GOPATH:=$(firstword $(subst :, ,$(shell go env GOPATH)))
+BENCHCMP_BINARY:=$(FIRST_GOPATH)/bin/benchcmp
 
 IMAGE = $(REGISTRY)/kube-state-metrics
 MULTI_ARCH_IMG = $(IMAGE)-$(ARCH)
 
-gofmtcheck:
+format:
 	@go fmt $(PKGS) | grep ".*\.go"; if [ "$$?" = "0" ]; then exit 1; fi
+	./tests/check_license.sh
 
 doccheck:
 	@echo "- Checking if documentation is up to date..."
 	@grep -hoE '(kube_[^ |]+)' Documentation/* --exclude=README.md| sort -u > documented_metrics
-	@sed -n 's/.*# TYPE \(kube_[^ ]\+\).*/\1/p' pkg/collectors/*_test.go | sort -u > tested_metrics
+	@sed -n 's/.*# TYPE \(kube_[^ ]\+\).*/\1/p' internal/collector/*_test.go | sort -u > tested_metrics
 	@diff -u0 tested_metrics documented_metrics || (echo "ERROR: Metrics with - are present in tests but missing in documentation, metrics with + are documented but not tested."; exit 1)
 	@echo OK
 	@rm -f tested_metrics documented_metrics
@@ -32,6 +35,11 @@ build: clean
 
 test-unit: clean build
 	GOOS=$(shell uname -s | tr A-Z a-z) GOARCH=$(ARCH) $(TESTENVVAR) go test --race $(FLAGS) $(PKGS)
+
+# Runs benchmark tests on the current git ref and the last release and compares
+# the two.
+test-benchmark-compare: $(BENCHCMP_BINARY)
+	./tests/compare_benchmarks.sh release-$(shell git describe --abbrev=0 | grep -ohE "[0-9]+.[0-9]+")
 
 TEMP_DIR := $(shell mktemp -d)
 
@@ -84,4 +92,7 @@ clean:
 e2e:
 	./tests/e2e.sh
 
-.PHONY: all build all-push all-container test-unit container push quay-push clean e2e
+$(BENCHCMP_BINARY):
+	go get golang.org/x/tools/cmd/benchcmp
+
+.PHONY: all build all-push all-container test-unit test-benchmark-compare container push quay-push clean e2e

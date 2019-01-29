@@ -21,7 +21,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/wanghaoran1988/openshift-state-metrics/pkg/version"
-	kcollectors "k8s.io/kube-state-metrics/pkg/collectors"
+	kcollectors "k8s.io/kube-state-metrics/pkg/collector"
 	koptions "k8s.io/kube-state-metrics/pkg/options"
 	"k8s.io/kube-state-metrics/pkg/whiteblacklist"
 

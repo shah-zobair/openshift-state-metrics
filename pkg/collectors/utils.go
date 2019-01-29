@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/api/core/v1"
 
-	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/metric"
 )
 
 var (
@@ -58,17 +58,17 @@ func boolFloat64(b bool) float64 {
 // addConditionMetrics generates one metric for each possible node condition
 // status. For this function to work properly, the last label in the metric
 // description must be the condition.
-func addConditionMetrics(cs v1.ConditionStatus) []*metrics.Metric {
-	return []*metrics.Metric{
-		&metrics.Metric{
+func addConditionMetrics(cs v1.ConditionStatus) []*metric.Metric {
+	return []*metric.Metric{
+		&metric.Metric{
 			LabelValues: []string{"true"},
 			Value:       boolFloat64(cs == v1.ConditionTrue),
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"false"},
 			Value:       boolFloat64(cs == v1.ConditionFalse),
 		},
-		&metrics.Metric{
+		&metric.Metric{
 			LabelValues: []string{"unknown"},
 			Value:       boolFloat64(cs == v1.ConditionUnknown),
 		},

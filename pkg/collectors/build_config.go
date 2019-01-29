@@ -6,7 +6,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/metric"
 	"k8s.io/kube-state-metrics/pkg/version"
 
 	"github.com/golang/glog"
@@ -20,70 +20,81 @@ var (
 	descBuildConfigLabelsHelp          = "Kubernetes labels converted to Prometheus labels."
 	descBuildConfigLabelsDefaultLabels = []string{"namespace", "buildconfig"}
 
-	buildconfigMetricFamilies = []metrics.FamilyGenerator{
-		metrics.FamilyGenerator{
+	buildconfigMetricFamilies = []metric.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_buildconfig_created",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Unix creation timestamp",
-			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metrics.Family {
-				f := metrics.Family{}
-
+			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metric.Family {
+				value := float64(0)
 				if !d.CreationTimestamp.IsZero() {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_buildconfig_created",
-						Value: float64(d.CreationTimestamp.Unix()),
-					})
+					value = float64(d.CreationTimestamp.Unix())
+				}
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: value,
+						},
+					},
 				}
 
-				return f
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_buildconfig_metadata_generation",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Sequence number representing a specific generation of the desired state.",
-			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_buildconfig_metadata_generation",
-					Value: float64(d.ObjectMeta.Generation),
-				}}
+			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metric.Family {
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: float64(d.ObjectMeta.Generation),
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: descBuildConfigLabelsName,
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: descBuildConfigLabelsHelp,
-			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metrics.Family {
+			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metric.Family {
 				labelKeys, labelValues := kubeLabelsToPrometheusLabels(d.Labels)
-				return metrics.Family{&metrics.Metric{
-					Name:        descBuildConfigLabelsName,
-					LabelKeys:   labelKeys,
-					LabelValues: labelValues,
-					Value:       1,
-				}}
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value:       1,
+							LabelKeys:   labelKeys,
+							LabelValues: labelValues,
+						},
+					},
+				}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_buildconfig_status_latest_version",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The latest version of buildconfig.",
-			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_buildconfig_status_latest_version",
-					Value: float64(d.Status.LastVersion),
-				}}
+			GenerateFunc: wrapBuildConfigFunc(func(d *v1.BuildConfig) metric.Family {
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: float64(d.Status.LastVersion),
+						},
+					},
+				}
 			}),
 		},
 	}
 )
 
-func wrapBuildConfigFunc(f func(config *v1.BuildConfig) metrics.Family) func(interface{}) metrics.Family {
-	return func(obj interface{}) metrics.Family {
+func wrapBuildConfigFunc(f func(config *v1.BuildConfig) metric.Family) func(interface{}) metric.Family {
+	return func(obj interface{}) metric.Family {
 		buildconfig := obj.(*v1.BuildConfig)
 
 		metricFamily := f(buildconfig)
 
-		for _, m := range metricFamily {
+		for _, m := range metricFamily.Metrics {
 			m.LabelKeys = append(descBuildConfigLabelsDefaultLabels, m.LabelKeys...)
 			m.LabelValues = append([]string{buildconfig.Namespace, buildconfig.Name}, m.LabelValues...)
 		}

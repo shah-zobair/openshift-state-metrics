@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kube-state-metrics/pkg/metrics"
+	"k8s.io/kube-state-metrics/pkg/metric"
 	"k8s.io/kube-state-metrics/pkg/version"
 
 	"github.com/golang/glog"
@@ -21,17 +21,16 @@ var (
 	descDeploymentLabelsHelp          = "Kubernetes labels converted to Prometheus labels."
 	descDeploymentLabelsDefaultLabels = []string{"namespace", "deploymentconfig"}
 
-	deploymentMetricFamilies = []metrics.FamilyGenerator{
-		metrics.FamilyGenerator{
+	deploymentMetricFamilies = []metric.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_created",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Unix creation timestamp",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				f := metrics.Family{}
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				f := metric.Family{}
 
 				if !d.CreationTimestamp.IsZero() {
-					f = append(f, &metrics.Metric{
-						Name:  "openshift_deploymentconfig_created",
+					f.Metrics = append(f.Metrics, &metric.Metric{
 						Value: float64(d.CreationTimestamp.Unix()),
 					})
 				}
@@ -39,158 +38,169 @@ var (
 				return f
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_status_replicas",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The number of replicas per deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_status_replicas",
-					Value: float64(d.Status.Replicas),
-				}}
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{
+					Metrics: []*metric.Metric{
+						{
+							Value: float64(d.Status.Replicas),
+						},
+					}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_status_replicas_available",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The number of available replicas per deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_status_replicas_available",
-					Value: float64(d.Status.AvailableReplicas),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.Status.AvailableReplicas),
+					},
 				}}
+
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_status_replicas_unavailable",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The number of unavailable replicas per deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_status_replicas_unavailable",
-					Value: float64(d.Status.UnavailableReplicas),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.Status.UnavailableReplicas),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_status_replicas_updated",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The number of updated replicas per deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_status_replicas_updated",
-					Value: float64(d.Status.UpdatedReplicas),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.Status.UpdatedReplicas),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_status_observed_generation",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "The generation observed by the deployment controller.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_status_observed_generation",
-					Value: float64(d.Status.ObservedGeneration),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.Status.ObservedGeneration),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_spec_replicas",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Number of desired pods for a deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_spec_replicas",
-					Value: float64(d.Spec.Replicas),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.Spec.Replicas),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_spec_paused",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Whether the deployment is paused and will not be processed by the deployment controller.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_spec_paused",
-					Value: boolFloat64(d.Spec.Paused),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: boolFloat64(d.Spec.Paused),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_spec_strategy_rollingupdate_max_unavailable",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Maximum number of unavailable replicas during a rolling update of a deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
 				if d.Spec.Strategy.RollingParams == nil {
-					return metrics.Family{}
+					return metric.Family{}
 				}
 
 				maxUnavailable, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxUnavailable, int(d.Spec.Replicas), true)
 				if err != nil {
 					panic(err)
 				}
-
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_spec_strategy_rollingupdate_max_unavailable",
-					Value: float64(maxUnavailable),
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(maxUnavailable),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_spec_strategy_rollingupdate_max_surge",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Maximum number of replicas that can be scheduled above the desired number of replicas during a rolling update of a deployment.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
 				if d.Spec.Strategy.RollingParams == nil {
-					return metrics.Family{}
+					return metric.Family{}
 				}
 
 				maxSurge, err := intstr.GetValueFromIntOrPercent(d.Spec.Strategy.RollingParams.MaxSurge, int(d.Spec.Replicas), true)
 				if err != nil {
 					panic(err)
 				}
-
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_spec_strategy_rollingupdate_max_surge",
-					Value: float64(maxSurge),
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(maxSurge),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: "openshift_deploymentconfig_metadata_generation",
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: "Sequence number representing a specific generation of the desired state.",
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
-				return metrics.Family{&metrics.Metric{
-					Name:  "openshift_deploymentconfig_metadata_generation",
-					Value: float64(d.ObjectMeta.Generation),
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						Value: float64(d.ObjectMeta.Generation),
+					},
 				}}
 			}),
 		},
-		metrics.FamilyGenerator{
+		metric.FamilyGenerator{
 			Name: descDeploymentLabelsName,
-			Type: metrics.MetricTypeGauge,
+			Type: metric.MetricTypeGauge,
 			Help: descDeploymentLabelsHelp,
-			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metrics.Family {
+			GenerateFunc: wrapDeploymentFunc(func(d *v1.DeploymentConfig) metric.Family {
 				labelKeys, labelValues := kubeLabelsToPrometheusLabels(d.Labels)
-				return metrics.Family{&metrics.Metric{
-					Name:        descDeploymentLabelsName,
-					LabelKeys:   labelKeys,
-					LabelValues: labelValues,
-					Value:       1,
+				return metric.Family{Metrics: []*metric.Metric{
+					{
+						LabelKeys:   labelKeys,
+						LabelValues: labelValues,
+						Value:       1,
+					},
 				}}
 			}),
 		},
 	}
 )
 
-func wrapDeploymentFunc(f func(*v1.DeploymentConfig) metrics.Family) func(interface{}) metrics.Family {
-	return func(obj interface{}) metrics.Family {
+func wrapDeploymentFunc(f func(*v1.DeploymentConfig) metric.Family) func(interface{}) metric.Family {
+	return func(obj interface{}) metric.Family {
 		deployment := obj.(*v1.DeploymentConfig)
 
 		metricFamily := f(deployment)
 
-		for _, m := range metricFamily {
+		for _, m := range metricFamily.Metrics {
 			m.LabelKeys = append(descDeploymentLabelsDefaultLabels, m.LabelKeys...)
 			m.LabelValues = append([]string{deployment.Namespace, deployment.Name}, m.LabelValues...)
 		}
