@@ -15,11 +15,6 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-### Go Patch ###
-/vendor/
-/Godeps/
-
-
 # End of https://www.gitignore.io/api/go
 
 *.iml
