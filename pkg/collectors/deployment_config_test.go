@@ -8,6 +8,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/openshift/api/apps/v1"
+
+	"k8s.io/kube-state-metrics/pkg/metric"
 )
 
 var (
@@ -139,7 +141,7 @@ func TestDeploymentCollector(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		c.Func = composeMetricGenFuncs(deploymentMetricFamilies)
+		c.Func = metric.ComposeMetricGenFuncs(deploymentMetricFamilies)
 		if err := c.run(); err != nil {
 			t.Errorf("unexpected collecting result in %vth run:\n%s", i, err)
 		}

@@ -21,7 +21,7 @@ var (
 	descBuildConfigLabelsDefaultLabels = []string{"namespace", "buildconfig"}
 
 	buildconfigMetricFamilies = []metric.FamilyGenerator{
-		metric.FamilyGenerator{
+		{
 			Name: "openshift_buildconfig_created",
 			Type: metric.MetricTypeGauge,
 			Help: "Unix creation timestamp",
@@ -40,7 +40,7 @@ var (
 
 			}),
 		},
-		metric.FamilyGenerator{
+		{
 			Name: "openshift_buildconfig_metadata_generation",
 			Type: metric.MetricTypeGauge,
 			Help: "Sequence number representing a specific generation of the desired state.",
@@ -54,7 +54,7 @@ var (
 				}
 			}),
 		},
-		metric.FamilyGenerator{
+		{
 			Name: descBuildConfigLabelsName,
 			Type: metric.MetricTypeGauge,
 			Help: descBuildConfigLabelsHelp,

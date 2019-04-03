@@ -18,6 +18,9 @@ gofmtcheck:
 build: clean
 	docker run --rm -v "$$PWD":/go/src/github.com/wanghaoran1988/openshift-state-metrics -w /go/src/github.com/wanghaoran1988/openshift-state-metrics -e GOOS=$(shell uname -s | tr A-Z a-z) -e GOARCH=$(ARCH) -e CGO_ENABLED=0 golang:${GO_VERSION} go build -ldflags "-s -w -X ${PKG}/version.Release=${TAG} -X ${PKG}/version.Commit=${Commit} -X ${PKG}/version.BuildDate=${BuildDate}" -o openshift-state-metrics
 
+test-unit: clean build
+	GOOS=$(shell uname -s | tr A-Z a-z) GOARCH=$(ARCH) $(TESTENVVAR) go test --race $(FLAGS) $(PKGS)
+
 TEMP_DIR := $(shell mktemp -d)
 
 all: all-container
@@ -57,4 +60,4 @@ endif
 clean:
 	rm -f openshift-state-metrics
 
-.PHONY: all build all-push all-container test-unit container push quay-push clean e2e
+.PHONY: all build all-push all-container test-unit container quay-push clean

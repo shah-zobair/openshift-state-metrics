@@ -129,53 +129,11 @@ var availableCollectors = map[string]func(f *Builder) *collector.Collector{
 	"clusterresourcequotas": func(b *Builder) *collector.Collector { return b.buildQuotaCollector() },
 }
 
-func extractMetricFamilyHeaders(families []metric.FamilyGenerator) []string {
-	headers := make([]string, len(families))
-
-	for i, f := range families {
-		header := strings.Builder{}
-
-		header.WriteString("# HELP ")
-		header.WriteString(f.Name)
-		header.WriteByte(' ')
-		header.WriteString(f.Help)
-		header.WriteByte('\n')
-		header.WriteString("# TYPE ")
-		header.WriteString(f.Name)
-		header.WriteByte(' ')
-		header.WriteString(string(f.Type))
-
-		headers[i] = header.String()
-	}
-
-	return headers
-}
-
-// composeMetricGenFuncs takes a slice of metric families and returns a function
-// that composes their metric generation functions into a single one.
-func composeMetricGenFuncs(families []metric.FamilyGenerator) func(obj interface{}) []metricsstore.FamilyStringer {
-	funcs := []func(obj interface{}) metric.Family{}
-
-	for _, f := range families {
-		funcs = append(funcs, f.GenerateFunc)
-	}
-
-	return func(obj interface{}) []metricsstore.FamilyStringer {
-		families := make([]metricsstore.FamilyStringer, len(funcs))
-
-		for i, f := range funcs {
-			families[i] = f(obj)
-		}
-
-		return families
-	}
-}
-
 func (b *Builder) buildDeploymentCollector() *collector.Collector {
-	filteredMetricFamilies := filterMetricFamilies(b.whiteBlackList, deploymentMetricFamilies)
-	composedMetricGenFuncs := composeMetricGenFuncs(filteredMetricFamilies)
+	filteredMetricFamilies := metric.FilterMetricFamilies(b.whiteBlackList, deploymentMetricFamilies)
+	composedMetricGenFuncs := metric.ComposeMetricGenFuncs(filteredMetricFamilies)
 
-	familyHeaders := extractMetricFamilyHeaders(filteredMetricFamilies)
+	familyHeaders := metric.ExtractMetricFamilyHeaders(filteredMetricFamilies)
 
 	store := metricsstore.NewMetricsStore(
 		familyHeaders,
@@ -188,10 +146,10 @@ func (b *Builder) buildDeploymentCollector() *collector.Collector {
 }
 
 func (b *Builder) buildBuildConfigCollector() *collector.Collector {
-	filteredMetricFamilies := filterMetricFamilies(b.whiteBlackList, buildconfigMetricFamilies)
-	composedMetricGenFuncs := composeMetricGenFuncs(filteredMetricFamilies)
+	filteredMetricFamilies := metric.FilterMetricFamilies(b.whiteBlackList, buildconfigMetricFamilies)
+	composedMetricGenFuncs := metric.ComposeMetricGenFuncs(filteredMetricFamilies)
 
-	familyHeaders := extractMetricFamilyHeaders(filteredMetricFamilies)
+	familyHeaders := metric.ExtractMetricFamilyHeaders(filteredMetricFamilies)
 
 	store := metricsstore.NewMetricsStore(
 		familyHeaders,
@@ -204,10 +162,10 @@ func (b *Builder) buildBuildConfigCollector() *collector.Collector {
 }
 
 func (b *Builder) buildBuildCollector() *collector.Collector {
-	filteredMetricFamilies := filterMetricFamilies(b.whiteBlackList, buildMetricFamilies)
-	composedMetricGenFuncs := composeMetricGenFuncs(filteredMetricFamilies)
+	filteredMetricFamilies := metric.FilterMetricFamilies(b.whiteBlackList, buildMetricFamilies)
+	composedMetricGenFuncs := metric.ComposeMetricGenFuncs(filteredMetricFamilies)
 
-	familyHeaders := extractMetricFamilyHeaders(filteredMetricFamilies)
+	familyHeaders := metric.ExtractMetricFamilyHeaders(filteredMetricFamilies)
 
 	store := metricsstore.NewMetricsStore(
 		familyHeaders,
@@ -220,10 +178,10 @@ func (b *Builder) buildBuildCollector() *collector.Collector {
 }
 
 func (b *Builder) buildQuotaCollector() *collector.Collector {
-	filteredMetricFamilies := filterMetricFamilies(b.whiteBlackList, quotaMetricFamilies)
-	composedMetricGenFuncs := composeMetricGenFuncs(filteredMetricFamilies)
+	filteredMetricFamilies := metric.FilterMetricFamilies(b.whiteBlackList, quotaMetricFamilies)
+	composedMetricGenFuncs := metric.ComposeMetricGenFuncs(filteredMetricFamilies)
 
-	familyHeaders := extractMetricFamilyHeaders(filteredMetricFamilies)
+	familyHeaders := metric.ExtractMetricFamilyHeaders(filteredMetricFamilies)
 
 	store := metricsstore.NewMetricsStore(
 		familyHeaders,
@@ -233,20 +191,6 @@ func (b *Builder) buildQuotaCollector() *collector.Collector {
 		b.apiserver, b.kubeconfig, b.namespaces, createClusterResourceQuotaListWatch)
 
 	return collector.NewCollector(store)
-}
-
-// filterMetricFamilies takes a white- and a blacklist and a slice of metric
-// families and returns a filtered slice.
-func filterMetricFamilies(l whiteBlackLister, families []metric.FamilyGenerator) []metric.FamilyGenerator {
-	filtered := []metric.FamilyGenerator{}
-
-	for _, f := range families {
-		if l.IsIncluded(f.Name) {
-			filtered = append(filtered, f)
-		}
-	}
-
-	return filtered
 }
 
 // reflectorPerNamespace creates a Kubernetes client-go reflector with the given
