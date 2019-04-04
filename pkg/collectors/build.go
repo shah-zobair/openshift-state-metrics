@@ -79,9 +79,9 @@ var (
 			}),
 		},
 		metric.FamilyGenerator{
-			Name: "openshift_build_started",
+			Name: "openshift_build_start",
 			Type: metric.MetricTypeGauge,
-			Help: "Started time of the build",
+			Help: "Start time of the build",
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
 				value := float64(0)
 				if !b.CreationTimestamp.IsZero() && b.Status.StartTimestamp != nil {
@@ -99,7 +99,7 @@ var (
 		metric.FamilyGenerator{
 			Name: "openshift_build_complete",
 			Type: metric.MetricTypeGauge,
-			Help: "Started time of the build",
+			Help: "Complet time of the build",
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
 				value := float64(0)
 				if !b.CreationTimestamp.IsZero() && b.Status.CompletionTimestamp != nil {
@@ -117,7 +117,7 @@ var (
 		metric.FamilyGenerator{
 			Name: "openshift_build_duration",
 			Type: metric.MetricTypeGauge,
-			Help: "duration time of the build",
+			Help: "Duration of the build",
 			GenerateFunc: wrapBuildFunc(func(b *v1.Build) metric.Family {
 				f := metric.Family{}
 

@@ -35,7 +35,7 @@ var (
 			}),
 		},
 		metric.FamilyGenerator{
-			Name: "",
+			Name: descClusterResourceQuotaLabelsName,
 			Type: metric.MetricTypeGauge,
 			Help: descClusterResourceQuotaLabelsHelp,
 			GenerateFunc: wrapClusterResourceQuotaFunc(func(quota *v1.ClusterResourceQuota) metric.Family {
@@ -51,9 +51,9 @@ var (
 			}),
 		},
 		metric.FamilyGenerator{
-			Name: "openshift_clusterresourcequota",
+			Name: "openshift_clusterresourcequota_usage",
 			Type: metric.MetricTypeGauge,
-			Help: "Information about resource quota.",
+			Help: "Usage about resource quota.",
 			GenerateFunc: wrapClusterResourceQuotaFunc(func(r *v1.ClusterResourceQuota) metric.Family {
 				f := metric.Family{}
 
