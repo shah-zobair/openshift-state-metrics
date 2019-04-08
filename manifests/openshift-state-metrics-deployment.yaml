@@ -18,7 +18,7 @@ spec:
       serviceAccountName: openshift-state-metrics
       containers:
       - name: openshift-state-metrics
-        image: quay.io/uptoknow/openshift-state-metrics
+        image: quay.io/redhat/openshift-state-metrics
         ports:
         - name: http-metrics
           containerPort: 8080

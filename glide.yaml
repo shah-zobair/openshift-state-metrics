@@ -1,4 +1,4 @@
-package: github.com/wanghaoran1988/openshift-state-metrics
+package: github.com/openshift/openshift-state-metrics
 import:
 - package: k8s.io/apimachinery
   repo: https://github.com/openshift/kubernetes-apimachinery.git
